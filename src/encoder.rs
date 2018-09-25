@@ -2684,7 +2684,7 @@ fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
     }
 }
 
-fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
+fn encode_tile_group(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
     let mut w = WriterEncoder::new();
 
     let fc = if fi.primary_ref_frame == PRIMARY_REF_NONE {
@@ -2884,7 +2884,7 @@ pub fn encode_frame(fi: &mut FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
 
         segmentation_optimize(fi, fs);
 
-        let tile = encode_tile(fi, fs); // actually tile group
+        let tile = encode_tile_group(fi, fs); // actually tile group
 
         write_obus(&mut packet, fi, fs).unwrap();
         let mut buf1 = Vec::new();
