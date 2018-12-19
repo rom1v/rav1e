@@ -45,6 +45,7 @@ pub mod encoder;
 pub mod mc;
 pub mod me;
 pub mod metrics;
+pub mod tile;
 pub mod scan_order;
 pub mod scenechange;
 
