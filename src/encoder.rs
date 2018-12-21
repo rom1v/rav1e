@@ -524,6 +524,8 @@ pub struct FrameInvariants {
     pub height: usize,
     pub padded_w: usize,
     pub padded_h: usize,
+    pub tile_width: usize,
+    pub tile_height: usize,
     pub sb_width: usize,
     pub sb_height: usize,
     pub w_in_b: usize,
@@ -603,6 +605,8 @@ impl FrameInvariants {
             sb_height: height.align_power_of_two_and_shift(6),
             w_in_b: 2 * width.align_power_of_two_and_shift(3), // MiCols, ((width+7)/8)<<3 >> MI_SIZE_LOG2
             h_in_b: 2 * height.align_power_of_two_and_shift(3), // MiRows, ((height+7)/8)<<3 >> MI_SIZE_LOG2
+            tile_width: width, // TODO
+            tile_height: height, // TODO
             number: 0,
             order_hint: 0,
             show_frame: true,

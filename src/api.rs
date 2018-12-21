@@ -44,6 +44,7 @@ pub struct EncoderConfig {
   pub color_description: Option<ColorDescription>,
   pub speed_settings: SpeedSettings,
   pub show_psnr: bool,
+  pub tile_settings: TileSettings,
 }
 
 impl Default for EncoderConfig {
@@ -64,6 +65,22 @@ impl EncoderConfig {
       color_description: None,
       speed_settings: SpeedSettings::from_preset(speed),
       show_psnr: false,
+      tile_settings: Default::default(),
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TileSettings {
+  pub rows_log2: u8,
+  pub cols_log2: u8,
+}
+
+impl Default for TileSettings {
+  fn default() -> Self {
+    Self {
+      rows_log2: 0,
+      cols_log2: 0,
     }
   }
 }
