@@ -11,6 +11,7 @@ use context::*;
 use encoder::*;
 use lrf::*;
 use plane::*;
+use quantize::*;
 
 use std::marker::PhantomData;
 use std::slice;
@@ -263,6 +264,48 @@ impl<'a> RestorationTileState<'a> {
         RestorationTilePlane::new(&rs.plane[1]),
         RestorationTilePlane::new(&rs.plane[2]),
       ],
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct TileStateMut<'a> {
+  pub input: &'a Frame,
+  pub input_hres: &'a Plane,
+  pub input_qres: &'a Plane,
+  pub x: usize,
+  pub y: usize,
+  pub width: usize,
+  pub height: usize,
+  pub rec: TileMut<'a>,
+  pub qc: QuantizationContext,
+  pub cdfs: CDFContext,
+  pub segmentation: SegmentationState,
+  pub restoration: RestorationTileState<'a>,
+}
+
+impl<'a> TileStateMut<'a> {
+  // exposed as unsafe because nothing prevents the caller to retrieve overlapping regions
+  unsafe fn new(
+    fs: &'a mut FrameState,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+  ) -> Self {
+    Self {
+      input: &fs.input,
+      input_hres: &fs.input_hres,
+      input_qres: &fs.input_qres,
+      x,
+      y,
+      width,
+      height,
+      rec: TileMut::new(&mut fs.rec, x, y, width, height),
+      qc: Default::default(),
+      cdfs: CDFContext::new(0),
+      segmentation: Default::default(),
+      restoration: RestorationTileState::new(&fs.restoration),
     }
   }
 }
