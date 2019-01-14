@@ -420,10 +420,11 @@ impl RestorationPlane {
   // frame, and decimated from 64 pixels in chroma.  When
   // filtering, they are not co-located on Y with superblocks.
   fn restoration_unit_index_by_stripe(&self, stripenum: usize, rux: usize,
-                                      cfg: &PlaneConfig) -> (usize, usize) {
+                                      fi: &FrameInvariants) -> (usize, usize) {
+    let stripes_per_unit_log2 = self.sb_shift + if fi.sequence.use_128x128_superblock { 1 } else { 0 };
     (
       cmp::min(rux, self.cols - 1),
-      cmp::min((stripenum * 64 >> cfg.ydec) / self.unit_size, self.rows - 1),
+      cmp::min(stripenum >> stripes_per_unit_log2, self.rows - 1),
     )
   }
 
@@ -438,8 +439,8 @@ impl RestorationPlane {
   }
 
   pub fn restoration_unit_by_stripe(&self, stripenum: usize, rux: usize,
-                                    cfg: &PlaneConfig) -> &RestorationUnit {
-    let (x, y) = self.restoration_unit_index_by_stripe(stripenum, rux, cfg);
+                                    fi: &FrameInvariants) -> &RestorationUnit {
+    let (x, y) = self.restoration_unit_index_by_stripe(stripenum, rux, fi);
     &self.units[y * self.cols + x]
   }
 }
@@ -523,7 +524,7 @@ impl RestorationState {
           } else {
             rp.unit_size
           };
-          let ru = rp.restoration_unit_by_stripe(si, rux, &out.planes[pli].cfg);
+          let ru = rp.restoration_unit_by_stripe(si, rux, fi);
           match ru.filter {
             RestorationFilter::Wiener{coeffs} => {          
               wiener_stripe_rdu(coeffs, fi,
