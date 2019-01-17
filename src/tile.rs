@@ -46,12 +46,13 @@ impl<'a> PlaneRegionMut<'a> {
     plane: &'a mut Plane,
     luma_x: usize,
     luma_y: usize,
-    tile_info: TileInfo,
+    luma_width: usize,
+    luma_height: usize,
   ) -> Self {
     let x = luma_x >> plane.cfg.xdec;
     let y = luma_y >> plane.cfg.ydec;
-    let w = tile_info.width >> plane.cfg.xdec;
-    let h = tile_info.height >> plane.cfg.ydec;
+    let w = luma_width >> plane.cfg.xdec;
+    let h = luma_height >> plane.cfg.ydec;
 
     let xorigin = plane.cfg.xorigin + x;
     let yorigin = plane.cfg.yorigin + y;
@@ -88,7 +89,8 @@ impl<'a> TileMut<'a> {
     frame: &'a mut Frame,
     x: usize,
     y: usize,
-    tile_info: TileInfo,
+    width: usize,
+    height: usize,
   ) -> Self {
     // we cannot retrieve &mut of slice items directly and safely
     let mut planes_iter = frame.planes.iter_mut();
@@ -99,19 +101,22 @@ impl<'a> TileMut<'a> {
             planes_iter.next().unwrap(),
             x,
             y,
-            tile_info,
+            width,
+            height,
           ),
           PlaneRegionMut::from_luma_coordinates(
             planes_iter.next().unwrap(),
             x,
             y,
-            tile_info,
+            width,
+            height,
           ),
           PlaneRegionMut::from_luma_coordinates(
             planes_iter.next().unwrap(),
             x,
             y,
-            tile_info,
+            width,
+            height,
           ),
         ]
       },
@@ -119,15 +124,10 @@ impl<'a> TileMut<'a> {
   }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct TileInfo {
-  width: usize,
-  height: usize,
-}
-
 pub struct TileIterMut<'a> {
   frame: *mut Frame,
-  tile_info: TileInfo,
+  tile_width: usize,
+  tile_height: usize,
   x: usize,
   y: usize,
   phantom: PhantomData<&'a mut Frame>,
@@ -139,8 +139,7 @@ impl<'a> TileIterMut<'a> {
     tile_width: usize,
     tile_height: usize,
   ) -> Self {
-    let tile_info = TileInfo { width: tile_width, height: tile_height };
-    Self { frame, tile_info, x: 0, y: 0, phantom: PhantomData }
+    Self { frame, x: 0, y: 0, tile_width, tile_height, phantom: PhantomData }
   }
 }
 
@@ -158,13 +157,15 @@ impl<'a> Iterator for TileIterMut<'a> {
       let (x, y) = (self.x, self.y);
 
       // update (self.x, self.y) for the next TileMut
-      self.x += self.tile_info.width;
+      self.x += self.tile_width;
       if self.x >= width {
         self.x = 0;
-        self.y += self.tile_info.height;
+        self.y += self.tile_height;
       }
 
-      let tile = unsafe { TileMut::new(frame, x, y, self.tile_info) };
+      let tile = unsafe {
+        TileMut::new(frame, x, y, self.tile_width, self.tile_height)
+      };
       Some(tile)
     }
   }
@@ -175,13 +176,11 @@ impl<'a> Iterator for TileIterMut<'a> {
     let width = planes[0].cfg.width;
     let height = planes[0].cfg.height;
 
-    let tile_width = self.tile_info.width;
-    let tile_height = self.tile_info.height;
+    let cols = (width + self.tile_width - 1) / self.tile_width;
+    let rows = (height + self.tile_height - 1) / self.tile_height;
 
-    let cols = (width + tile_width - 1) / tile_width;
-    let rows = (height + tile_height - 1) / tile_height;
-
-    let consumed = (self.y / tile_height) * rows + (self.x / tile_width);
+    let consumed =
+      (self.y / self.tile_height) * rows + (self.x / self.tile_width);
     let remaining = cols * rows - consumed;
 
     (remaining, Some(remaining))
