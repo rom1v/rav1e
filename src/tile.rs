@@ -310,6 +310,65 @@ impl<'a> TileStateMut<'a> {
   }
 }
 
+pub struct TileStateIterMut<'a> {
+  fs: *mut FrameState,
+  tile_width: usize,
+  tile_height: usize,
+  tile_cols: usize,
+  tile_rows: usize,
+  next: usize, // index of the next tile to provide
+  phantom: PhantomData<&'a mut FrameState>,
+}
+
+impl<'a> TileStateIterMut<'a> {
+  pub fn from_frame_state(
+    fs: &'a mut FrameState,
+    tile_width: usize,
+    tile_height: usize,
+  ) -> Self {
+    let frame_width = fs.rec.planes[0].cfg.width;
+    let frame_height = fs.rec.planes[0].cfg.height;
+
+    let tile_cols = (frame_width + tile_width - 1) / tile_width;
+    let tile_rows = (frame_height + tile_height - 1) / tile_height;
+
+    Self {
+      fs,
+      tile_width,
+      tile_height,
+      tile_cols,
+      tile_rows,
+      next: 0,
+      phantom: PhantomData,
+    }
+  }
+}
+
+impl<'a> Iterator for TileStateIterMut<'a> {
+  type Item = TileStateMut<'a>;
+
+  fn next(&mut self) -> Option<TileStateMut<'a>> {
+    if self.next < self.tile_rows * self.tile_cols {
+      let x = (self.next % self.tile_cols) * self.tile_width;
+      let y = (self.next / self.tile_rows) * self.tile_height;
+      self.next += 1;
+
+      let ts = unsafe {
+        let fs = &mut *self.fs;
+        TileStateMut::new(fs, x, y, self.tile_width, self.tile_height)
+      };
+      Some(ts)
+    } else {
+      None
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let remaining = self.tile_cols * self.tile_rows - self.next;
+    (remaining, Some(remaining))
+  }
+}
+
 #[cfg(test)]
 pub mod test {
   use super::*;
