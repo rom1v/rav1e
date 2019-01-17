@@ -19,6 +19,7 @@ use plane::Plane;
 use plane::PlaneOffset;
 use plane::PlaneConfig;
 use std::cmp;
+use std::sync::atomic::AtomicBool;
 use util::clamp;
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
@@ -359,22 +360,22 @@ fn wiener_stripe_rdu(coeffs: [[i8; 3]; 2], fi: &FrameInvariants,
   }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub struct RestorationUnit {
   pub filter: RestorationFilter,
-  pub coded: bool,
+  pub coded: AtomicBool,
 }
 
 impl RestorationUnit {
   pub fn default() -> RestorationUnit {
     RestorationUnit {
       filter: RestorationFilter::default(),
-      coded: false,
+      coded: AtomicBool::new(false),
     }
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RestorationPlane {
   pub lrf_type: u8,
   pub unit_size: usize,
@@ -410,7 +411,14 @@ impl RestorationPlane {
       rows,
       wiener_ref: [WIENER_TAPS_MID; 2],
       sgrproj_ref: SGRPROJ_XQD_MID,
-      units: vec![RestorationUnit::default(); cols * rows].into_boxed_slice(),
+      units: {
+        let mut units = Vec::with_capacity(cols * rows);
+        for _ in 0..cols * rows {
+          // RestorationUnit is not Clone, so we cannot initialize with vec![]
+          units.push(RestorationUnit::default());
+        }
+        units.into_boxed_slice()
+      },
     }
   }
 
@@ -436,18 +444,13 @@ impl RestorationPlane {
     &self.units[y * self.cols + x]
   }
 
-  pub fn restoration_unit_as_mut(&mut self, sbo: &SuperBlockOffset) -> &mut RestorationUnit {
-    let (x, y) = self.restoration_unit_index(sbo);
-    &mut self.units[y * self.cols + x]
-  }
-
   pub fn restoration_unit_by_stripe(&self, stripenum: usize, rux: usize) -> &RestorationUnit {
     let (x, y) = self.restoration_unit_index_by_stripe(stripenum, rux);
     &self.units[y * self.cols + x]
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RestorationState {
   pub plane: [RestorationPlane; PLANES]
 }
@@ -486,10 +489,6 @@ impl RestorationState {
 
   pub fn restoration_unit(&self, sbo: &SuperBlockOffset, pli: usize) -> &RestorationUnit {
     self.plane[pli].restoration_unit(sbo)
-  }
-
-  pub fn restoration_unit_as_mut(&mut self, sbo: &SuperBlockOffset, pli: usize) -> &mut RestorationUnit {
-    self.plane[pli].restoration_unit_as_mut(sbo)
   }
 
   pub fn lrf_optimize_superblock(&mut self, _sbo: &SuperBlockOffset, _fi: &FrameInvariants,

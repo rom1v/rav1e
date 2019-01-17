@@ -31,6 +31,7 @@ use token_cdfs::*;
 use util::{clamp, msb};
 
 use std::*;
+use std::sync::atomic::Ordering;
 
 pub const PLANES: usize = 3;
 
@@ -3011,15 +3012,16 @@ impl ContextWriter {
                    sbo: &SuperBlockOffset) {
     if !fi.allow_intrabc { // TODO: also disallow if lossless
       for pli in 0..PLANES {
-        let code;
         let rp = &mut rs.plane[pli];
-        {
-          let ru = &mut rp.restoration_unit_as_mut(sbo);
-          code = !ru.coded;
-          ru.coded = true;
-        }
-        if code {
-          match rp.restoration_unit_as_mut(sbo).filter {
+        let (filter, coded) = {
+          let ru = rp.restoration_unit(sbo);
+          (
+            ru.filter,
+            ru.coded.swap(true, Ordering::SeqCst),
+          )
+        };
+        if !coded {
+          match filter {
             RestorationFilter::None => {
               match rp.lrf_type {
                 RESTORE_WIENER => {
