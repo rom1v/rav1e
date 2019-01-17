@@ -9,6 +9,7 @@
 
 use context::*;
 use encoder::*;
+use lrf::*;
 use plane::*;
 
 use std::marker::PhantomData;
@@ -258,6 +259,43 @@ impl<'a> Iterator for TileIterMut<'a> {
     let remaining = cols * rows - consumed;
 
     (remaining, Some(remaining))
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct RestorationTilePlane<'a> {
+  pub plane: &'a RestorationPlane,
+  pub wiener_ref: [[i8; 3]; 2],
+  pub sgrproj_ref: [i8; 2],
+}
+
+impl<'a> RestorationTilePlane<'a> {
+  pub fn new(rp: &'a RestorationPlane) -> Self {
+    Self {
+      plane: rp,
+      wiener_ref: [WIENER_TAPS_MID; 2],
+      sgrproj_ref: SGRPROJ_XQD_MID,
+    }
+  }
+}
+
+// contrary to other views, RestorationTileState is not exposed as mutable
+// it is (possibly) shared between several tiles (due to restoration unit stretching)
+// so it provides "interior" mutability protected by mutex or atomic access
+#[derive(Clone, Debug)]
+pub struct RestorationTileState<'a> {
+  pub planes: [RestorationTilePlane<'a>; PLANES],
+}
+
+impl<'a> RestorationTileState<'a> {
+  pub fn new(rs: &'a RestorationState) -> Self {
+    Self {
+      planes: [
+        RestorationTilePlane::new(&rs.plane[0]),
+        RestorationTilePlane::new(&rs.plane[1]),
+        RestorationTilePlane::new(&rs.plane[2]),
+      ],
+    }
   }
 }
 
