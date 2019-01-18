@@ -348,6 +348,29 @@ impl<'a> TileStateMut<'a> {
       restoration: RestorationTileState::new(&fs.restoration),
     }
   }
+
+  pub fn sb_x(&self) -> usize {
+    self.x >> self.sb_shift
+  }
+
+  pub fn sb_y(&self) -> usize {
+    self.y >> self.sb_shift
+  }
+
+  pub fn sb_width(&self) -> usize {
+    self.width >> self.sb_shift
+  }
+
+  pub fn sb_height(&self) -> usize {
+    self.height >> self.sb_shift
+  }
+
+  pub fn frame_sb_offset(&self, tile_sb_x: usize, tile_sb_y: usize) -> SuperBlockOffset {
+    SuperBlockOffset {
+      x: tile_sb_x + (self.x >> self.sb_shift),
+      y: tile_sb_y + (self.y >> self.sb_shift)
+    }
+  }
 }
 
 pub struct TileStateIterMut<'a> {
