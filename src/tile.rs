@@ -372,6 +372,7 @@ impl<'a> Iterator for TileStateIterMut<'a> {
 #[cfg(test)]
 pub mod test {
   use super::*;
+  use api::*;
 
   #[test]
   fn test_tile_count() {
@@ -608,6 +609,265 @@ pub mod test {
     assert_eq!(&[14, 121, 1, 3], &plane.data[idx..idx + 4]);
 
     let plane = &frame.planes[2];
+    let offset = (16, 32); // bottom-middle tile, chroma plane
+    let y = plane.cfg.yorigin + offset.1 + 1;
+    let x = plane.cfg.xorigin + offset.0 + 11;
+    let idx = y * plane.cfg.stride + x;
+    assert_eq!(&[6, 5, 2, 11, 8], &plane.data[idx..idx + 5]);
+  }
+
+  fn create_frame_state(width: usize, height: usize, chroma_sampling: ChromaSampling) -> FrameState {
+    // FrameInvariants aligns to the next multiple of 8, so using other values could make tests confusing
+    assert!(width & 7 == 0);
+    assert!(height & 7 == 0);
+    let config = Default::default();
+    let frame_info = FrameInfo {
+      width,
+      height,
+      bit_depth: 8,
+      chroma_sampling,
+      ..Default::default()
+    };
+    let sequence = Sequence::new(&frame_info);
+    let fi = FrameInvariants::new(width, height, config, sequence);
+    FrameState::new(&fi)
+  }
+
+  #[test]
+  fn test_tile_state_count() {
+    let mut fs = create_frame_state(80, 64, ChromaSampling::Cs420);
+
+    {
+      let mut iter = fs.tile_state_iter_mut(40, 32);
+      assert_eq!(4, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(3, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(2, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(1, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(0, iter.size_hint().0);
+      assert!(iter.next().is_none());
+    }
+
+    {
+      let mut iter = fs.tile_state_iter_mut(32, 24);
+      assert_eq!(9, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(8, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(7, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(6, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(5, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(4, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(3, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(2, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(1, iter.size_hint().0);
+      assert!(iter.next().is_some());
+      assert_eq!(0, iter.size_hint().0);
+      assert!(iter.next().is_none());
+    }
+  }
+
+  #[test]
+  fn test_tile_state_area() {
+    let mut fs = create_frame_state(80, 72, ChromaSampling::Cs420);
+
+    let planes_origins = [
+      (fs.rec.planes[0].cfg.xorigin, fs.rec.planes[0].cfg.yorigin),
+      (fs.rec.planes[1].cfg.xorigin, fs.rec.planes[1].cfg.yorigin),
+      (fs.rec.planes[2].cfg.xorigin, fs.rec.planes[2].cfg.yorigin),
+    ];
+
+    let tile_states = fs.tile_state_iter_mut(32, 32).collect::<Vec<_>>();
+    // the frame must be split into 9 tiles:
+    //
+    //       luma (Y)             chroma (U)            chroma (V)
+    //   32x32 32x32 16x32     16x16 16x16  8x16     16x16 16x16  8x16
+    //   32x32 32x32 16x32     16x16 16x16  8x16     16x16 16x16  8x16
+    //   32x 8 32x 8 16x 8     16x 4 16x 4  8x 4     16x 4 16x 4  8x 4
+
+    assert_eq!(9, tile_states.len());
+
+    let tile = &tile_states[0].rec; // the top-left tile
+    assert_eq!(32, tile.planes[0].cfg.width);
+    assert_eq!(32, tile.planes[0].cfg.height);
+    assert_eq!(16, tile.planes[1].cfg.width);
+    assert_eq!(16, tile.planes[1].cfg.height);
+    assert_eq!(16, tile.planes[2].cfg.width);
+    assert_eq!(16, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[1].rec; // the top-middle tile
+    assert_eq!(32, tile.planes[0].cfg.width);
+    assert_eq!(32, tile.planes[0].cfg.height);
+    assert_eq!(16, tile.planes[1].cfg.width);
+    assert_eq!(16, tile.planes[1].cfg.height);
+    assert_eq!(16, tile.planes[2].cfg.width);
+    assert_eq!(16, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0 + 32, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0 + 16, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0 + 16, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[2].rec; // the top-right tile
+    assert_eq!(16, tile.planes[0].cfg.width);
+    assert_eq!(32, tile.planes[0].cfg.height);
+    assert_eq!(8, tile.planes[1].cfg.width);
+    assert_eq!(16, tile.planes[1].cfg.height);
+    assert_eq!(8, tile.planes[2].cfg.width);
+    assert_eq!(16, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0 + 64, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0 + 32, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0 + 32, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[3].rec; // the middle-left tile
+    assert_eq!(32, tile.planes[0].cfg.width);
+    assert_eq!(32, tile.planes[0].cfg.height);
+    assert_eq!(16, tile.planes[1].cfg.width);
+    assert_eq!(16, tile.planes[1].cfg.height);
+    assert_eq!(16, tile.planes[2].cfg.width);
+    assert_eq!(16, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1 + 32, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1 + 16, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1 + 16, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[4].rec; // the center tile
+    assert_eq!(32, tile.planes[0].cfg.width);
+    assert_eq!(32, tile.planes[0].cfg.height);
+    assert_eq!(16, tile.planes[1].cfg.width);
+    assert_eq!(16, tile.planes[1].cfg.height);
+    assert_eq!(16, tile.planes[2].cfg.width);
+    assert_eq!(16, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0 + 32, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1 + 32, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0 + 16, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1 + 16, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0 + 16, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1 + 16, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[5].rec; // the middle-right tile
+    assert_eq!(16, tile.planes[0].cfg.width);
+    assert_eq!(32, tile.planes[0].cfg.height);
+    assert_eq!(8, tile.planes[1].cfg.width);
+    assert_eq!(16, tile.planes[1].cfg.height);
+    assert_eq!(8, tile.planes[2].cfg.width);
+    assert_eq!(16, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0 + 64, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1 + 32, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0 + 32, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1 + 16, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0 + 32, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1 + 16, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[6].rec; // the bottom-left tile
+    assert_eq!(32, tile.planes[0].cfg.width);
+    assert_eq!(8, tile.planes[0].cfg.height);
+    assert_eq!(16, tile.planes[1].cfg.width);
+    assert_eq!(4, tile.planes[1].cfg.height);
+    assert_eq!(16, tile.planes[2].cfg.width);
+    assert_eq!(4, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1 + 64, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1 + 32, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1 + 32, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[7].rec; // the bottom-middle tile
+    assert_eq!(32, tile.planes[0].cfg.width);
+    assert_eq!(8, tile.planes[0].cfg.height);
+    assert_eq!(16, tile.planes[1].cfg.width);
+    assert_eq!(4, tile.planes[1].cfg.height);
+    assert_eq!(16, tile.planes[2].cfg.width);
+    assert_eq!(4, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0 + 32, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1 + 64, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0 + 16, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1 + 32, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0 + 16, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1 + 32, tile.planes[2].cfg.yorigin);
+
+    let tile = &tile_states[8].rec; // the bottom-right tile
+    assert_eq!(16, tile.planes[0].cfg.width);
+    assert_eq!(8, tile.planes[0].cfg.height);
+    assert_eq!(8, tile.planes[1].cfg.width);
+    assert_eq!(4, tile.planes[1].cfg.height);
+    assert_eq!(8, tile.planes[2].cfg.width);
+    assert_eq!(4, tile.planes[2].cfg.height);
+    assert_eq!(planes_origins[0].0 + 64, tile.planes[0].cfg.xorigin);
+    assert_eq!(planes_origins[0].1 + 64, tile.planes[0].cfg.yorigin);
+    assert_eq!(planes_origins[1].0 + 32, tile.planes[1].cfg.xorigin);
+    assert_eq!(planes_origins[1].1 + 32, tile.planes[1].cfg.yorigin);
+    assert_eq!(planes_origins[2].0 + 32, tile.planes[2].cfg.xorigin);
+    assert_eq!(planes_origins[2].1 + 32, tile.planes[2].cfg.yorigin);
+  }
+
+  #[test]
+  fn test_tile_state_write() {
+    let mut fs = create_frame_state(80, 72, ChromaSampling::Cs420);
+
+    {
+      let mut tile_states = fs.tile_state_iter_mut(32, 32).collect::<Vec<_>>();
+
+      {
+        // row 12 of Y-plane of the top-left tile
+        let row = tile_states[0].rec.planes[0].row_mut(12);
+        assert_eq!(32, row.len());
+        &mut row[5..11].copy_from_slice(&[4, 42, 12, 18, 15, 31]);
+      }
+
+      {
+        // row 8 of U-plane of the middle-right tile
+        let row = tile_states[5].rec.planes[1].row_mut(8);
+        assert_eq!(8, row.len());
+        &mut row[..4].copy_from_slice(&[14, 121, 1, 3]);
+      }
+
+      {
+        // row 1 of V-plane of the bottom-middle tile
+        let row = tile_states[7].rec.planes[2].row_mut(1);
+        assert_eq!(16, row.len());
+        &mut row[11..16].copy_from_slice(&[6, 5, 2, 11, 8]);
+      }
+    }
+
+    // check that writes on tiles correctly affected the underlying frame
+
+    let plane = &fs.rec.planes[0];
+    let y = plane.cfg.yorigin + 12;
+    let x = plane.cfg.xorigin + 5;
+    let idx = y * plane.cfg.stride + x;
+    assert_eq!(&[4, 42, 12, 18, 15, 31], &plane.data[idx..idx + 6]);
+
+    let plane = &fs.rec.planes[1];
+    let offset = (32, 16); // middle-right tile, chroma plane
+    let y = plane.cfg.yorigin + offset.1 + 8;
+    let x = plane.cfg.xorigin + offset.0;
+    let idx = y * plane.cfg.stride + x;
+    assert_eq!(&[14, 121, 1, 3], &plane.data[idx..idx + 4]);
+
+    let plane = &fs.rec.planes[2];
     let offset = (16, 32); // bottom-middle tile, chroma plane
     let y = plane.cfg.yorigin + offset.1 + 1;
     let x = plane.cfg.xorigin + offset.0 + 11;
