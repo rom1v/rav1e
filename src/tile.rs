@@ -77,6 +77,16 @@ impl<'a> PlaneRegionMut<'a> {
       (self.cfg.yorigin + y) * self.plane_cfg.stride + self.cfg.xorigin;
     unsafe { slice::from_raw_parts_mut(self.data.add(offset), self.cfg.width) }
   }
+
+  pub fn data_ptr(&self) -> *const u16 {
+    let offset = self.cfg.yorigin * self.plane_cfg.stride + self.cfg.xorigin;
+    unsafe { self.data.add(offset) }
+  }
+
+  pub fn data_ptr_mut(&mut self) -> *mut u16 {
+    let offset = self.cfg.yorigin * self.plane_cfg.stride + self.cfg.xorigin;
+    unsafe { self.data.add(offset) }
+  }
 }
 
 #[derive(Debug, Clone)]
