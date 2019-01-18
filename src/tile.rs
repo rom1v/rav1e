@@ -31,13 +31,6 @@ pub struct PlaneRegionMut<'a> {
   phantom: PhantomData<&'a mut u16>,
 }
 
-pub struct PlaneRegion<'a> {
-  data: *const u16,
-  pub plane_cfg: &'a PlaneConfig,
-  pub cfg: PlaneRegionConfig,
-  phantom: PhantomData<&'a u16>,
-}
-
 impl<'a> PlaneRegionMut<'a> {
   // exposed as unsafe because nothing prevents the caller to retrieve overlapping regions
   unsafe fn new(plane: &'a mut Plane, cfg: PlaneRegionConfig) -> Self {
@@ -91,31 +84,6 @@ impl<'a> PlaneRegionMut<'a> {
   }
 
   pub fn data_ptr_mut(&mut self) -> *mut u16 {
-    let offset = self.cfg.yorigin * self.plane_cfg.stride + self.cfg.xorigin;
-    unsafe { self.data.add(offset) }
-  }
-
-  pub fn as_const(&self) -> PlaneRegion {
-    PlaneRegion {
-      data: self.data,
-      plane_cfg: self.plane_cfg,
-      cfg: self.cfg.clone(),
-      phantom: PhantomData,
-    }
-  }
-}
-
-// for now only created from PlaneRegionMut
-impl<'a> PlaneRegion<'a> {
-  // TODO use macros to factorize methods common with PlaneRegionMut
-  pub fn row(&self, y: usize) -> &[u16] {
-    assert!(y < self.cfg.height);
-    let offset =
-      (self.cfg.yorigin + y) * self.plane_cfg.stride + self.cfg.xorigin;
-    unsafe { slice::from_raw_parts(self.data.add(offset), self.cfg.width) }
-  }
-
-  pub fn data_ptr(&self) -> *const u16 {
     let offset = self.cfg.yorigin * self.plane_cfg.stride + self.cfg.xorigin;
     unsafe { self.data.add(offset) }
   }
