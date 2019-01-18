@@ -616,7 +616,7 @@ pub mod test {
     assert_eq!(&[6, 5, 2, 11, 8], &plane.data[idx..idx + 5]);
   }
 
-  fn create_frame_state(width: usize, height: usize, chroma_sampling: ChromaSampling) -> FrameState {
+  fn create_frame_invariants(width: usize, height: usize, chroma_sampling: ChromaSampling) -> FrameInvariants {
     // FrameInvariants aligns to the next multiple of 8, so using other values could make tests confusing
     assert!(width & 7 == 0);
     assert!(height & 7 == 0);
@@ -629,13 +629,13 @@ pub mod test {
       ..Default::default()
     };
     let sequence = Sequence::new(&frame_info);
-    let fi = FrameInvariants::new(width, height, config, sequence);
-    FrameState::new(&fi)
+    FrameInvariants::new(width, height, config, sequence)
   }
 
   #[test]
   fn test_tile_state_count() {
-    let mut fs = create_frame_state(80, 64, ChromaSampling::Cs420);
+    let fi = create_frame_invariants(80, 64, ChromaSampling::Cs420);
+    let mut fs = FrameState::new(&fi);
 
     {
       let mut iter = fs.tile_state_iter_mut(40, 32);
@@ -678,7 +678,8 @@ pub mod test {
 
   #[test]
   fn test_tile_state_area() {
-    let mut fs = create_frame_state(80, 72, ChromaSampling::Cs420);
+    let fi = create_frame_invariants(80, 72, ChromaSampling::Cs420);
+    let mut fs = FrameState::new(&fi);
 
     let planes_origins = [
       (fs.rec.planes[0].cfg.xorigin, fs.rec.planes[0].cfg.yorigin),
@@ -825,7 +826,8 @@ pub mod test {
 
   #[test]
   fn test_tile_state_write() {
-    let mut fs = create_frame_state(80, 72, ChromaSampling::Cs420);
+    let fi = create_frame_invariants(80, 72, ChromaSampling::Cs420);
+    let mut fs = FrameState::new(&fi);
 
     {
       let mut tile_states = fs.tile_state_iter_mut(32, 32).collect::<Vec<_>>();
