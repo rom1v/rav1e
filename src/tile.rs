@@ -277,6 +277,7 @@ pub struct TileStateMut<'a> {
   pub y: usize,
   pub width: usize,
   pub height: usize,
+  pub sb_shift: usize,
   pub rec: TileMut<'a>,
   pub qc: QuantizationContext,
   pub cdfs: CDFContext,
@@ -292,7 +293,13 @@ impl<'a> TileStateMut<'a> {
     y: usize,
     width: usize,
     height: usize,
+    sb_shift: usize,
   ) -> Self {
+    // offset and size must be multiple of superblocks
+    assert!(x & (1 << sb_shift) - 1 == 0);
+    assert!(y & (1 << sb_shift) - 1 == 0);
+    assert!(width & (1 << sb_shift) - 1 == 0);
+    assert!(height & (1 << sb_shift) - 1 == 0);
     Self {
       input: &fs.input,
       input_hres: &fs.input_hres,
@@ -301,6 +308,7 @@ impl<'a> TileStateMut<'a> {
       y,
       width,
       height,
+      sb_shift,
       rec: TileMut::new(&mut fs.rec, x, y, width, height),
       qc: Default::default(),
       cdfs: CDFContext::new(0),
@@ -316,6 +324,7 @@ pub struct TileStateIterMut<'a> {
   tile_height: usize,
   tile_cols: usize,
   tile_rows: usize,
+  sb_shift: usize,
   next: usize, // index of the next tile to provide
   phantom: PhantomData<&'a mut FrameState>,
 }
@@ -323,6 +332,7 @@ pub struct TileStateIterMut<'a> {
 impl<'a> TileStateIterMut<'a> {
   pub fn from_frame_state(
     fs: &'a mut FrameState,
+    fi: &FrameInvariants,
     tile_width: usize,
     tile_height: usize,
   ) -> Self {
@@ -338,6 +348,7 @@ impl<'a> TileStateIterMut<'a> {
       tile_height,
       tile_cols,
       tile_rows,
+      sb_shift: if fi.sequence.use_128x128_superblock { 7 } else { 6 },
       next: 0,
       phantom: PhantomData,
     }
@@ -355,7 +366,7 @@ impl<'a> Iterator for TileStateIterMut<'a> {
 
       let ts = unsafe {
         let fs = &mut *self.fs;
-        TileStateMut::new(fs, x, y, self.tile_width, self.tile_height)
+        TileStateMut::new(fs, x, y, self.tile_width, self.tile_height, self.sb_shift)
       };
       Some(ts)
     } else {
@@ -638,7 +649,7 @@ pub mod test {
     let mut fs = FrameState::new(&fi);
 
     {
-      let mut iter = fs.tile_state_iter_mut(40, 32);
+      let mut iter = fs.tile_state_iter_mut(&fi, 40, 32);
       assert_eq!(4, iter.size_hint().0);
       assert!(iter.next().is_some());
       assert_eq!(3, iter.size_hint().0);
@@ -652,7 +663,7 @@ pub mod test {
     }
 
     {
-      let mut iter = fs.tile_state_iter_mut(32, 24);
+      let mut iter = fs.tile_state_iter_mut(&fi, 32, 24);
       assert_eq!(9, iter.size_hint().0);
       assert!(iter.next().is_some());
       assert_eq!(8, iter.size_hint().0);
@@ -687,7 +698,7 @@ pub mod test {
       (fs.rec.planes[2].cfg.xorigin, fs.rec.planes[2].cfg.yorigin),
     ];
 
-    let tile_states = fs.tile_state_iter_mut(32, 32).collect::<Vec<_>>();
+    let tile_states = fs.tile_state_iter_mut(&fi, 32, 32).collect::<Vec<_>>();
     // the frame must be split into 9 tiles:
     //
     //       luma (Y)             chroma (U)            chroma (V)
@@ -830,7 +841,7 @@ pub mod test {
     let mut fs = FrameState::new(&fi);
 
     {
-      let mut tile_states = fs.tile_state_iter_mut(32, 32).collect::<Vec<_>>();
+      let mut tile_states = fs.tile_state_iter_mut(&fi, 32, 32).collect::<Vec<_>>();
 
       {
         // row 12 of Y-plane of the top-left tile

@@ -460,8 +460,8 @@ impl FrameState {
         }
     }
 
-    pub fn tile_state_iter_mut(&mut self, tile_width: usize, tile_height: usize) -> TileStateIterMut {
-      TileStateIterMut::from_frame_state(self, tile_width, tile_height)
+    pub fn tile_state_iter_mut(&mut self, fi: &FrameInvariants, tile_width: usize, tile_height: usize) -> TileStateIterMut {
+      TileStateIterMut::from_frame_state(self, fi, tile_width, tile_height)
     }
 }
 
