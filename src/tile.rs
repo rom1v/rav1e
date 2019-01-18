@@ -78,6 +78,32 @@ impl<'a> PlaneRegionMut<'a> {
     unsafe { slice::from_raw_parts_mut(self.data.add(offset), self.cfg.width) }
   }
 
+  pub fn subregion_sized(&'a self, x: usize, y: usize, width: usize, height: usize) -> PlaneSubRegion<'a> {
+    PlaneSubRegion {
+      region: self,
+      cfg: PlaneSubRegionConfig { x, y, width, height },
+    }
+  }
+
+  pub fn subregion(&'a self, x: usize, y: usize) -> PlaneSubRegion<'a> {
+    let width = self.cfg.width - x;
+    let height = self.cfg.height - y;
+    self.subregion_sized(x, y, width, height)
+  }
+
+  pub fn subregion_sized_mut(&'a mut self, x: usize, y: usize, width: usize, height: usize) -> PlaneSubRegionMut<'a> {
+    PlaneSubRegionMut {
+      region: self,
+      cfg: PlaneSubRegionConfig { x, y, width, height },
+    }
+  }
+
+  pub fn subregion_mut(&'a mut self, x: usize, y: usize) -> PlaneSubRegionMut<'a> {
+    let width = self.cfg.width - x;
+    let height = self.cfg.height - y;
+    self.subregion_sized_mut(x, y, width, height)
+  }
+
   pub fn data_ptr(&self) -> *const u16 {
     let offset = self.cfg.yorigin * self.plane_cfg.stride + self.cfg.xorigin;
     unsafe { self.data.add(offset) }
@@ -86,6 +112,44 @@ impl<'a> PlaneRegionMut<'a> {
   pub fn data_ptr_mut(&mut self) -> *mut u16 {
     let offset = self.cfg.yorigin * self.plane_cfg.stride + self.cfg.xorigin;
     unsafe { self.data.add(offset) }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaneSubRegionConfig {
+  // coordinates of the subregion relative to the region
+  pub x: usize,
+  pub y: usize,
+  pub width: usize,
+  pub height: usize,
+}
+
+pub struct PlaneSubRegion<'a> {
+  region: &'a PlaneRegionMut<'a>,
+  cfg: PlaneSubRegionConfig,
+}
+
+pub struct PlaneSubRegionMut<'a> {
+  region: &'a mut PlaneRegionMut<'a>,
+  cfg: PlaneSubRegionConfig,
+}
+
+impl<'a> PlaneSubRegion<'a> {
+  pub fn row(&self, y: usize) -> &[u16] {
+    let region_row = self.region.row(self.cfg.y + y);
+    &region_row[self.cfg.x..self.cfg.x + self.cfg.width]
+  }
+}
+
+impl<'a> PlaneSubRegionMut<'a> {
+  pub fn row(&self, y: usize) -> &[u16] {
+    let region_row = self.region.row(self.cfg.y + y);
+    &region_row[self.cfg.x..self.cfg.x + self.cfg.width]
+  }
+
+  pub fn row_mut(&mut self, y: usize) -> &mut [u16] {
+    let region_row = self.region.row_mut(self.cfg.y + y);
+    &mut region_row[self.cfg.x..self.cfg.x + self.cfg.width]
   }
 }
 
