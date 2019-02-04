@@ -379,16 +379,17 @@ fn deblock_size4(
 
 // Assumes rec[0] and src[0] are set 2 taps back from the edge.
 // Accesses four taps, accumulates four pixels into the tally
-fn sse_size4(
-  rec: &[u16], src: &[u16], tally: &mut [i64; MAX_LOOP_FILTER + 2],
-  rec_pitch: usize, src_pitch: usize, rec_stride: usize, src_stride: usize,
+fn sse_size4<'a>(
+  rec: &PlaneSlice<'a>,
+  src: &PlaneSlice<'a>,
+  tally: &mut [i64; MAX_LOOP_FILTER + 2],
+  rec_pitch: usize,
+  src_pitch: usize,
   bd: usize
 ) {
-  let mut rec_s = 0;
-  let mut src_s = 0;
-  for _i in 0..4 {
-    let p = &rec[rec_s..]; // four taps
-    let a = &src[src_s..]; // four pixels to compare
+  for y in 0..4 {
+    let p = rec.row(0, y); // four taps
+    let a = src.row(0, y); // four pixels to compare
     let p1 = p[0] as i32;
     let p0 = p[rec_pitch] as i32;
     let q0 = p[rec_pitch * 2] as i32;
@@ -424,9 +425,6 @@ fn sse_size4(
     tally[mask] += sse_narrow2;
     tally[nhev] -= sse_narrow2;
     tally[nhev] += sse_narrow4;
-
-    rec_s += rec_stride;
-    src_s += src_stride;
   }
 }
 
@@ -483,17 +481,18 @@ fn deblock_size6(
 
 // Assumes rec[0] and src[0] are set 3 taps back from the edge.
 // Accesses six taps, accumulates four pixels into the tally
-fn sse_size6(
-  rec: &[u16], src: &[u16], tally: &mut [i64; MAX_LOOP_FILTER + 2],
-  rec_pitch: usize, src_pitch: usize, rec_stride: usize, src_stride: usize,
+fn sse_size6<'a>(
+  rec: &PlaneSlice<'a>,
+  src: &PlaneSlice<'a>,
+  tally: &mut [i64; MAX_LOOP_FILTER + 2],
+  rec_pitch: usize,
+  src_pitch: usize,
   bd: usize
 ) {
-  let mut rec_s = 0;
-  let mut src_s = 0;
   let flat = 1 << bd - 8;
-  for _i in 0..4 {
-    let p = &rec[rec_s..]; // six taps
-    let a = &src[src_s + src_pitch..]; // four pixels to compare so offset one forward
+  for y in 0..4 {
+    let p = rec.row(0, y); // six taps
+    let a = src.row(src_pitch as isize, y); // four pixels to compare so offset one forward
     let p2 = p[0] as i32;
     let p1 = p[rec_pitch] as i32;
     let p0 = p[rec_pitch * 2] as i32;
@@ -546,9 +545,6 @@ fn sse_size6(
       tally[nhev] -= sse_narrow2;
       tally[nhev] += sse_narrow4;
     }
-
-    rec_s += rec_stride;
-    src_s += src_stride;
   }
 }
 
@@ -627,17 +623,18 @@ fn deblock_size8(
 
 // Assumes rec[0] and src[0] are set 4 taps back from the edge.
 // Accesses eight taps, accumulates six pixels into the tally
-fn sse_size8(
-  rec: &[u16], src: &[u16], tally: &mut [i64; MAX_LOOP_FILTER + 2],
-  rec_pitch: usize, src_pitch: usize, rec_stride: usize, src_stride: usize,
+fn sse_size8<'a>(
+  rec: &PlaneSlice<'a>,
+  src: &PlaneSlice<'a>,
+  tally: &mut [i64; MAX_LOOP_FILTER + 2],
+  rec_pitch: usize,
+  src_pitch: usize,
   bd: usize
 ) {
-  let mut rec_s = 0;
-  let mut src_s = 0;
   let flat = 1 << bd - 8;
-  for _i in 0..4 {
-    let p = &rec[rec_s..]; // eight taps
-    let a = &src[src_s + src_pitch..]; // six pixels to compare so offset one forward
+  for y in 0..4 {
+    let p = rec.row(0, y); // eight taps
+    let a = src.row(src_pitch as isize, y); // six pixels to compare so offset one forward
     let p3 = p[0] as i32;
     let p2 = p[rec_pitch] as i32;
     let p1 = p[rec_pitch * 2] as i32;
@@ -693,9 +690,6 @@ fn sse_size8(
       tally[nhev] -= sse_narrow2;
       tally[nhev] += sse_narrow4;
     }
-
-    src_s += src_stride;
-    rec_s += rec_stride;
   }
 }
 
@@ -795,17 +789,18 @@ fn deblock_size14(
 
 // Assumes rec[0] and src[0] are set 7 taps back from the edge.
 // Accesses fourteen taps, accumulates twelve pixels into the tally
-fn sse_size14(
-  rec: &[u16], src: &[u16], tally: &mut [i64; MAX_LOOP_FILTER + 2],
-  rec_pitch: usize, src_pitch: usize, rec_stride: usize, src_stride: usize,
+fn sse_size14<'a>(
+  rec: &PlaneSlice<'a>,
+  src: &PlaneSlice<'a>,
+  tally: &mut [i64; MAX_LOOP_FILTER + 2],
+  rec_pitch: usize,
+  src_pitch: usize,
   bd: usize
 ) {
-  let mut rec_s = 0;
-  let mut src_s = 0;
   let flat = 1 << bd - 8;
-  for _i in 0..4 {
-    let p = &rec[rec_s..]; // 14 taps
-    let a = &src[src_s + src_pitch..]; // 12 pixels to compare so offset one forward
+  for y in 0..4 {
+    let p = rec.row(0, y); // 14 taps
+    let a = src.row(src_pitch as isize, y); // 12 pixels to compare so offset one forward
     let p6 = p[0] as i32;
     let p5 = p[rec_pitch] as i32;
     let p4 = p[rec_pitch * 2] as i32;
@@ -909,9 +904,6 @@ fn sse_size14(
       tally[nhev] -= sse_narrow2;
       tally[nhev] += sse_narrow4;
     }
-
-    rec_s += rec_stride;
-    src_s += src_stride;
   }
 }
 
@@ -966,59 +958,52 @@ fn sse_v_edge(
     let filter_size =
       deblock_size(block, prev_block, rec_plane, pli, true, block_edge);
     if filter_size > 0 {
-      let po = bo.plane_offset(&rec_plane.cfg); // rec and src have identical subsampling
+      let po = {
+        let mut po = bo.plane_offset(&rec_plane.cfg); // rec and src have identical subsampling
+        po.x -= (filter_size >> 1) as isize;
+        po
+      };
+
       let rec_slice = rec_plane.slice(&po);
       let src_slice = src_plane.slice(&po);
-      let rec_tmp = rec_slice.go_left(filter_size >> 1);
-      let src_tmp = src_slice.go_left(filter_size >> 1);
-      let rec = rec_tmp.as_slice();
-      let src = src_tmp.as_slice();
       match filter_size {
         4 => {
           sse_size4(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
             1,
             1,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             bd
           );
         }
         6 => {
           sse_size6(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
             1,
             1,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             bd
           );
         }
         8 => {
           sse_size8(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
             1,
             1,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             bd
           );
         }
         14 => {
           sse_size14(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
             1,
             1,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             bd
           );
         }
@@ -1079,21 +1064,20 @@ fn sse_h_edge(
     let filter_size =
       deblock_size(block, prev_block, rec_plane, pli, true, block_edge);
     if filter_size > 0 {
-      let po = bo.plane_offset(&rec_plane.cfg); // rec and src have identical subsampling
+      let po = {
+        let mut po = bo.plane_offset(&rec_plane.cfg); // rec and src have identical subsampling
+        po.x -= (filter_size >> 1) as isize;
+        po
+      };
+
       let rec_slice = rec_plane.slice(&po);
       let src_slice = src_plane.slice(&po);
-      let rec_tmp = rec_slice.go_up(filter_size >> 1);
-      let src_tmp = src_slice.go_up(filter_size >> 1);
-      let rec = rec_tmp.as_slice();
-      let src = src_tmp.as_slice();
       match filter_size {
         4 => {
           sse_size4(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             1,
             1,
             bd
@@ -1101,11 +1085,9 @@ fn sse_h_edge(
         }
         6 => {
           sse_size6(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             1,
             1,
             bd
@@ -1113,11 +1095,9 @@ fn sse_h_edge(
         }
         8 => {
           sse_size8(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             1,
             1,
             bd
@@ -1125,11 +1105,9 @@ fn sse_h_edge(
         }
         14 => {
           sse_size14(
-            rec,
-            src,
+            &rec_slice,
+            &src_slice,
             tally,
-            rec_plane.cfg.stride,
-            src_plane.cfg.stride,
             1,
             1,
             bd
