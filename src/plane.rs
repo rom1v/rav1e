@@ -302,6 +302,23 @@ impl<'a> ExactSizeIterator for IterWidth<'a> { }
 impl<'a> FusedIterator for IterWidth<'a> { }
 
 impl<'a> PlaneSlice<'a> {
+  pub fn row(&self, x_offset: isize, y_offset: isize) -> &[u16] {
+    assert!(self.plane.cfg.yorigin as isize + self.y + y_offset >= 0);
+    assert!(self.plane.cfg.xorigin as isize + self.x + x_offset >= 0);
+    let base_y = (self.plane.cfg.yorigin as isize + self.y + y_offset) as usize;
+    let base_x = (self.plane.cfg.xorigin as isize + self.x + x_offset) as usize;
+    let base = base_y * self.plane.cfg.stride + base_x;
+    let width = self.plane.cfg.stride - base_x;
+    &self.plane.data[base..base + width]
+  }
+
+  pub fn as_ptr(&self) -> *const u16 {
+    let base_y = (self.plane.cfg.yorigin as isize + self.y) as usize;
+    let base_x = (self.plane.cfg.xorigin as isize + self.x) as usize;
+    let base = base_y * self.plane.cfg.stride + base_x;
+    self.plane.data[base..].as_ptr()
+  }
+
   pub fn as_slice(&self) -> &'a [u16] {
     let stride = self.plane.cfg.stride;
     let base = (self.y + self.plane.cfg.yorigin as isize) as usize * stride
