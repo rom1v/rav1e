@@ -10,6 +10,7 @@
 use std::iter::FusedIterator;
 use std::fmt::{Debug, Display, Formatter};
 use std::mem;
+use std::ops::Range;
 
 use crate::util::*;
 
@@ -315,6 +316,31 @@ impl<'a, T: Pixel> ExactSizeIterator for IterWidth<'a, T> { }
 impl<'a, T: Pixel> FusedIterator for IterWidth<'a, T> { }
 
 impl<'a, T: Pixel> PlaneSlice<'a, T> {
+  fn slice_range(&self, y_offset: usize) -> Range<usize> {
+    assert!(self.plane.cfg.yorigin as isize + self.y + y_offset as isize >= 0);
+    let base_y = (self.plane.cfg.yorigin as isize + self.y + y_offset as isize) as usize;
+    let base_x = (self.plane.cfg.xorigin as isize + self.x) as usize;
+    let base = base_y * self.plane.cfg.stride + base_x;
+    let width = self.plane.cfg.stride - base_x;
+    base..base + width
+  }
+
+  pub fn row(&self, y: usize) -> &[T] {
+    let range = self.slice_range(y);
+    &self.plane.data[range]
+  }
+
+  fn base(&self) ->usize {
+    let base_y = (self.plane.cfg.yorigin as isize + self.y) as usize;
+    let base_x = (self.plane.cfg.xorigin as isize + self.x) as usize;
+    base_y * self.plane.cfg.stride + base_x
+  }
+
+  pub fn as_ptr(&self) -> *const T {
+    let base = self.base();
+    self.plane.data[base..].as_ptr()
+  }
+
   pub fn as_slice(&self) -> &'a [T] {
     let stride = self.plane.cfg.stride;
     let base = (self.y + self.plane.cfg.yorigin as isize) as usize * stride
