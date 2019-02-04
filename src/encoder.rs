@@ -1745,10 +1745,10 @@ fn diff(dst: &mut [i16], src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, width: us
   let src1_stride = src1.plane.cfg.stride;
   let src2_stride = src2.plane.cfg.stride;
 
-  for ((l, s1), s2) in dst.chunks_mut(width).take(height)
-                        .zip(src1.as_slice().chunks(src1_stride))
-                        .zip(src2.as_slice().chunks(src2_stride)) {
-    for ((r, v1), v2) in l.iter_mut().zip(s1).zip(s2) {
+  for (y, l) in dst.chunks_mut(width).take(height).enumerate() {
+    let s1 = src1.row(0, y as isize);
+    let s2 = src2.row(0, y as isize);
+    for ((r, v1), v2) in l.iter_mut().zip(s1.iter()).zip(s2.iter()) {
       *r = *v1 as i16 - *v2 as i16;
     }
   }

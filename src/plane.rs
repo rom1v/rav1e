@@ -310,13 +310,6 @@ impl<'a> PlaneSlice<'a> {
     self.plane.data[base..].as_ptr()
   }
 
-  pub fn as_slice(&self) -> &'a [u16] {
-    let stride = self.plane.cfg.stride;
-    let base = (self.y + self.plane.cfg.yorigin as isize) as usize * stride
-      + (self.x + self.plane.cfg.xorigin as isize) as usize;
-    &self.plane.data[base..]
-  }
-
   pub fn as_slice_clamped(&self) -> &'a [u16] {
     let stride = self.plane.cfg.stride;
     let y = (self.y.min(self.plane.cfg.height as isize)
