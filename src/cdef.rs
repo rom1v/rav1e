@@ -287,8 +287,8 @@ pub fn cdef_sb_padded_frame_copy(fi: &FrameInvariants, sbo: &SuperBlockOffset,
         // above or below the frame, fill with flag
         for x in 0..(sb_size>>xdec) + pad*2 { out_row[x] = CDEF_VERY_LARGE; }
       } else {
-        let mut in_slice = f.planes[p].slice(&PlaneOffset {x:0, y:offset.y + y - ipad});
-        let mut in_row = in_slice.as_slice();
+        let in_slice = f.planes[p].slice(&PlaneOffset {x:0, y:offset.y + y - ipad});
+        let in_row = in_slice.row(0, 0);
         // are we guaranteed to be all in frame this row?
         if offset.x < ipad || offset.x + (sb_size as isize >>xdec) + ipad >= w {
           // No; do it the hard way.  off left or right edge, fill with flag.
