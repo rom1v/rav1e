@@ -260,15 +260,15 @@ mod nasm {
           UninitializedAlignedArray();
         let mut src8: [u8; (128 + 7) * (128 + 7)] =
           unsafe { mem::uninitialized() };
-        convert_slice_2d(
-          &mut src8,
-          width + 7,
-          src.go_left(3).go_up(3).as_slice(),
-          src.plane.cfg.stride,
-          width + 7,
-          height + 7
-        );
         unsafe {
+          convert_slice_2d(
+            src8.as_mut_ptr(),
+            width + 7,
+            src.row(-3, -3).as_ptr(),
+            src.plane.cfg.stride,
+            width + 7,
+            height + 7
+          );
           select_put_fn_avx2(mode_x, mode_y)(
             dst8.array.as_mut_ptr(),
             width as isize,
@@ -279,17 +279,17 @@ mod nasm {
             col_frac,
             row_frac
           );
+          let dst_stride = dst.plane.cfg.stride;
+          let dst_slice = dst.as_mut_slice();
+          convert_slice_2d(
+            dst_slice.as_mut_ptr(),
+            dst_stride,
+            dst8.array.as_ptr(),
+            width,
+            width,
+            height
+          );
         }
-        let dst_stride = dst.plane.cfg.stride;
-        let dst_slice = dst.as_mut_slice();
-        convert_slice_2d(
-          dst_slice,
-          dst_stride,
-          &dst8.array,
-          width,
-          width,
-          height
-        );
         return;
       }
     }
@@ -306,15 +306,15 @@ mod nasm {
     if is_x86_feature_detected!("avx2") && bit_depth == 8 {
       let mut src8: [u8; (128 + 7) * (128 + 7)] =
         unsafe { mem::uninitialized() };
-      convert_slice_2d(
-        &mut src8,
-        width + 7,
-        src.go_left(3).go_up(3).as_slice(),
-        src.plane.cfg.stride,
-        width + 7,
-        height + 7
-      );
       unsafe {
+        convert_slice_2d(
+          src8.as_mut_ptr(),
+          width + 7,
+          src.row(-3, -3).as_ptr(),
+          src.plane.cfg.stride,
+          width + 7,
+          height + 7
+        );
         select_prep_fn_avx2(mode_x, mode_y)(
           tmp.as_mut_ptr(),
           src8[(width + 7) * 3 + 3..].as_ptr(),
@@ -349,17 +349,17 @@ mod nasm {
           width as i32,
           height as i32
         );
+        let dst_stride = dst.plane.cfg.stride;
+        let dst_slice = dst.as_mut_slice();
+        convert_slice_2d(
+          dst_slice.as_mut_ptr(),
+          dst_stride,
+          dst8.array.as_ptr(),
+          width,
+          width,
+          height
+        );
       }
-      let dst_stride = dst.plane.cfg.stride;
-      let dst_slice = dst.as_mut_slice();
-      convert_slice_2d(
-        dst_slice,
-        dst_stride,
-        &dst8.array,
-        width,
-        width,
-        height
-      );
       return;
     } else {
       super::native::mc_avg(dst, tmp1, tmp2, width, height, bit_depth);
@@ -373,13 +373,16 @@ mod native {
   use crate::plane::*;
   use crate::util::*;
 
-  fn run_filter<T: AsPrimitive<i32>>(
-    src: &[T], stride: usize, filter: [i32; 8]
+unsafe fn run_filter<T: AsPrimitive<i32>>(
+    src: *const T, stride: usize, filter: [i32; 8]
   ) -> i32 {
     filter
       .iter()
-      .zip(src.iter().step_by(stride))
-      .map(|(f, s)| f * s.as_())
+      .enumerate()
+      .map(|(i, f)| {
+        let p = src.add(i * stride);
+        f * (*p).as_()
+      })
       .sum::<i32>()
   }
 
@@ -416,15 +419,17 @@ mod native {
         }
       }
       (0, _) => {
-        let src_slice = src.go_up(3).as_slice();
         for r in 0..height {
+          let src_slice = src.row(0, r as isize - 3);
           for c in 0..width {
             dst_slice[r * dst_stride + c] = round_shift(
-              run_filter(
-                &src_slice[r * ref_stride + c..],
-                ref_stride,
-                y_filter
-              ),
+              unsafe {
+                run_filter(
+                  src_slice[c..].as_ptr(),
+                  ref_stride,
+                  y_filter
+                )
+              },
               7
             )
             .max(0)
@@ -434,12 +439,12 @@ mod native {
         }
       }
       (_, 0) => {
-        let src_slice = src.go_left(3).as_slice();
         for r in 0..height {
+          let src_slice = src.row(0, r as isize - 3);
           for c in 0..width {
             dst_slice[r * dst_stride + c] = round_shift(
               round_shift(
-                run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+                unsafe { run_filter(src_slice[c..].as_ptr(), 1, x_filter) },
                 7 - intermediate_bits
               ),
               intermediate_bits
@@ -453,12 +458,12 @@ mod native {
       (_, _) => {
         let mut intermediate = [0 as i16; 8 * (128 + 7)];
 
-        let src_slice = src.go_left(3).go_up(3).as_slice();
         for cg in (0..width).step_by(8) {
           for r in 0..height + 7 {
+            let src_slice = src.row(-3, r as isize - 3);
             for c in cg..(cg + 8).min(width) {
               intermediate[8 * r + (c - cg)] = round_shift(
-                run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+                unsafe { run_filter(src_slice[c..].as_ptr(), 1, x_filter) },
                 7 - intermediate_bits
               ) as i16;
             }
@@ -467,7 +472,7 @@ mod native {
           for r in 0..height {
             for c in cg..(cg + 8).min(width) {
               dst_slice[r * dst_stride + c] = round_shift(
-                run_filter(&intermediate[8 * r + c - cg..], 8, y_filter),
+                unsafe { run_filter(intermediate[8 * r + c - cg..].as_ptr(), 8, y_filter) },
                 7 + intermediate_bits
               )
               .max(0)
@@ -491,35 +496,37 @@ mod native {
     let intermediate_bits = 4 - if bit_depth == 12 { 2 } else { 0 };
     match (col_frac, row_frac) {
       (0, 0) => {
-        let src_slice = src.as_slice();
         for r in 0..height {
+          let src_slice = src.row(0, r as isize);
           for c in 0..width {
             tmp[r * width + c] =
-              (src_slice[r * ref_stride + c] << intermediate_bits) as i16;
+              (src_slice[c] << intermediate_bits) as i16;
           }
         }
       }
       (0, _) => {
-        let src_slice = src.go_up(3).as_slice();
         for r in 0..height {
+          let src_slice = src.row(0, r as isize - 3);
           for c in 0..width {
             tmp[r * width + c] = round_shift(
-              run_filter(
-                &src_slice[r * ref_stride + c..],
-                ref_stride,
-                y_filter
-              ),
+              unsafe {
+                run_filter(
+                  src_slice[c..].as_ptr(),
+                  ref_stride,
+                  y_filter
+                )
+              },
               7 - intermediate_bits
             ) as i16;
           }
         }
       }
       (_, 0) => {
-        let src_slice = src.go_left(3).as_slice();
         for r in 0..height {
+          let src_slice = src.row(0, r as isize - 3);
           for c in 0..width {
             tmp[r * width + c] = round_shift(
-              run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+              unsafe { run_filter(src_slice[c..].as_ptr(), 1, x_filter) },
               7 - intermediate_bits
             ) as i16;
           }
@@ -528,12 +535,12 @@ mod native {
       (_, _) => {
         let mut intermediate = [0 as i16; 8 * (128 + 7)];
 
-        let src_slice = src.go_left(3).go_up(3).as_slice();
         for cg in (0..width).step_by(8) {
           for r in 0..height + 7 {
+            let src_slice = src.row(-3, r as isize - 3);
             for c in cg..(cg + 8).min(width) {
               intermediate[8 * r + (c - cg)] = round_shift(
-                run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+                unsafe { run_filter(src_slice[c..].as_ptr(), 1, x_filter) },
                 7 - intermediate_bits
               ) as i16;
             }
@@ -542,7 +549,7 @@ mod native {
           for r in 0..height {
             for c in cg..(cg + 8).min(width) {
               tmp[r * width + c] = round_shift(
-                run_filter(&intermediate[8 * r + c - cg..], 8, y_filter),
+                unsafe { run_filter(intermediate[8 * r + c - cg..].as_ptr(), 8, y_filter) },
                 7
               ) as i16;
             }
