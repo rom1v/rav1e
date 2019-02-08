@@ -9,6 +9,7 @@
 
 use std::iter::FusedIterator;
 use std::fmt::{Debug, Formatter};
+use std::ops::Range;
 
 use crate::util::*;
 
@@ -302,14 +303,19 @@ impl<'a> ExactSizeIterator for IterWidth<'a> { }
 impl<'a> FusedIterator for IterWidth<'a> { }
 
 impl<'a> PlaneSlice<'a> {
-  pub fn row(&self, x_offset: isize, y_offset: isize) -> &[u16] {
+  fn slice_range(&self, x_offset: isize, y_offset: isize) -> Range<usize> {
     assert!(self.plane.cfg.yorigin as isize + self.y + y_offset >= 0);
     assert!(self.plane.cfg.xorigin as isize + self.x + x_offset >= 0);
     let base_y = (self.plane.cfg.yorigin as isize + self.y + y_offset) as usize;
     let base_x = (self.plane.cfg.xorigin as isize + self.x + x_offset) as usize;
     let base = base_y * self.plane.cfg.stride + base_x;
     let width = self.plane.cfg.stride - base_x;
-    &self.plane.data[base..base + width]
+    base..base + width
+  }
+
+  pub fn row(&self, x_offset: isize, y_offset: isize) -> &[u16] {
+    let range = self.slice_range(x_offset, y_offset);
+    &self.plane.data[range]
   }
 
   pub fn as_ptr(&self) -> *const u16 {
