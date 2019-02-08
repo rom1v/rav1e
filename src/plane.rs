@@ -318,10 +318,14 @@ impl<'a> PlaneSlice<'a> {
     &self.plane.data[range]
   }
 
-  pub fn as_ptr(&self) -> *const u16 {
+  fn base(&self) -> usize {
     let base_y = (self.plane.cfg.yorigin as isize + self.y) as usize;
     let base_x = (self.plane.cfg.xorigin as isize + self.x) as usize;
-    let base = base_y * self.plane.cfg.stride + base_x;
+    base_y * self.plane.cfg.stride + base_x
+  }
+
+  pub fn as_ptr(&self) -> *const u16 {
+    let base = self.base();
     self.plane.data[base..].as_ptr()
   }
 
