@@ -381,6 +381,42 @@ pub struct PlaneMutSlice<'a> {
 }
 
 impl<'a> PlaneMutSlice<'a> {
+  fn slice_range(&self, x_offset: isize, y_offset: isize) -> Range<usize> {
+    assert!(self.plane.cfg.yorigin as isize + self.y + y_offset >= 0);
+    assert!(self.plane.cfg.xorigin as isize + self.x + x_offset >= 0);
+    let base_y = (self.plane.cfg.yorigin as isize + self.y + y_offset) as usize;
+    let base_x = (self.plane.cfg.xorigin as isize + self.x + x_offset) as usize;
+    let base = base_y * self.plane.cfg.stride + base_x;
+    let width = self.plane.cfg.stride - base_x;
+    base..base + width
+  }
+
+  pub fn row(&self, x_offset: isize, y_offset: isize) -> &[u16] {
+    let range = self.slice_range(x_offset, y_offset);
+    &self.plane.data[range]
+  }
+
+  pub fn row_mut(&mut self, x_offset: isize, y_offset: isize) -> &mut [u16] {
+    let range = self.slice_range(x_offset, y_offset);
+    &mut self.plane.data[range]
+  }
+
+  fn base(&self) -> usize {
+    let base_y = (self.plane.cfg.yorigin as isize + self.y) as usize;
+    let base_x = (self.plane.cfg.xorigin as isize + self.x) as usize;
+    base_y * self.plane.cfg.stride + base_x
+  }
+
+  pub fn as_ptr(&self) -> *const u16 {
+    let base = self.base();
+    self.plane.data[base..].as_ptr()
+  }
+
+  pub fn as_mut_ptr(&mut self) -> *mut u16 {
+    let base = self.base();
+    self.plane.data[base..].as_mut_ptr()
+  }
+
   pub fn as_mut_slice(&mut self) -> &mut [u16] {
     let stride = self.plane.cfg.stride;
     let base = (self.y + self.plane.cfg.yorigin as isize) as usize * stride
