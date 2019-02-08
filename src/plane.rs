@@ -113,11 +113,9 @@ impl<T: Pixel> Plane<T> {
 
     if xorigin > 0 {
       for y in 0..height {
-        let mut ps = self
-          .mut_slice(&PlaneOffset { x: -(xorigin as isize), y: y as isize });
-        let s = ps.as_mut_slice_w_width(xorigin + 1);
-        let fill_val = s[xorigin];
-        for val in s[..xorigin].iter_mut() {
+        let base = (yorigin + y) * stride;
+        let fill_val = self.data[base + xorigin];
+        for val in &mut self.data[base..base + xorigin] {
           *val = fill_val;
         }
       }
@@ -125,35 +123,29 @@ impl<T: Pixel> Plane<T> {
 
     if xorigin + width < stride {
       for y in 0..height {
-        let mut ps = self
-          .mut_slice(&PlaneOffset { x: width as isize - 1, y: y as isize });
-        let s = ps.as_mut_slice_w_width(stride - xorigin - width + 1);
-        let fill_val = s[0];
-        for val in s[1..].iter_mut() {
+        let base = (yorigin + y) * stride + xorigin + width;
+        let fill_val = self.data[base - 1];
+        for val in &mut self.data[base..stride - base] {
           *val = fill_val;
         }
       }
     }
 
     if yorigin > 0 {
-      let mut ps = self.mut_slice(&PlaneOffset {
-        x: -(xorigin as isize),
-        y: -(yorigin as isize)
-      });
-      let (s1, s2) = ps.as_mut_slice().split_at_mut(yorigin * stride);
+      let (top, bottom) = self.data.split_at_mut(yorigin * stride);
+      let src = &bottom[..stride];
       for y in 0..yorigin {
-        s1[y * stride..y * stride + stride].copy_from_slice(&s2[..stride]);
+        let dst = &mut top[y * stride..(y + 1) * stride];
+        dst.copy_from_slice(src);
       }
     }
 
     if yorigin + height < self.cfg.alloc_height {
-      let mut ps = self.mut_slice(&PlaneOffset {
-        x: -(xorigin as isize),
-        y: height as isize - 1
-      });
-      let (s2, s1) = ps.as_mut_slice().split_at_mut(stride);
-      for y in 0..yorigin {
-        s1[y * stride..y * stride + stride].copy_from_slice(&s2[..stride]);
+      let (top, bottom) = self.data.split_at_mut((yorigin + height) * stride);
+      let src = &top[(yorigin + height - 1) * stride..];
+      for y in 0..self.cfg.alloc_height - (yorigin + height) {
+        let dst = &mut bottom[y * stride..(y + 1) * stride];
+        dst.copy_from_slice(src);
       }
     }
   }
@@ -224,13 +216,16 @@ impl<T: Pixel> Plane<T> {
   pub fn downsample_from(&mut self, src: &Plane<T>) {
     let width = self.cfg.width;
     let height = self.cfg.height;
+    let xorigin = self.cfg.xorigin;
+    let yorigin = self.cfg.yorigin;
+    let stride = self.cfg.stride;
 
     assert!(width * 2 == src.cfg.width);
     assert!(height * 2 == src.cfg.height);
 
     for row in 0..height {
-      let mut dst_slice = self.mut_slice(&PlaneOffset{ x: 0, y: row as isize });
-      let dst = dst_slice.as_mut_slice();
+      let base = (yorigin + row) * stride + xorigin;
+      let dst = &mut self.data[base..base + width];
 
       for col in 0..width {
         let mut sum = 0;
@@ -494,23 +489,6 @@ impl<'a, T: Pixel> PlaneMutSlice<'a, T> {
   pub fn as_mut_ptr(&mut self) -> *mut T {
     let base = self.base();
     self.plane.data[base..].as_mut_ptr()
-  }
-
-  pub fn as_mut_slice(&mut self) -> &mut [T] {
-    let stride = self.plane.cfg.stride;
-    let base = (self.y + self.plane.cfg.yorigin as isize) as usize * stride
-      + (self.x + self.plane.cfg.xorigin as isize) as usize;
-    &mut self.plane.data[base..]
-  }
-
-  pub fn as_mut_slice_w_width(&mut self, width: usize) -> &mut [T] {
-    let stride = self.plane.cfg.stride;
-    let y = self.y + self.plane.cfg.yorigin as isize;
-    let x = self.x + self.plane.cfg.xorigin as isize;
-    assert!(y >= 0);
-    assert!(x >= 0);
-    let base = y as usize * stride + x as usize;
-    &mut self.plane.data[base..base + width]
   }
 
   pub fn len(&self) -> usize {

@@ -238,8 +238,8 @@ fn sgrproj_stripe_rdu<T: Pixel>(
   let start = cmp::max(0, -stripe_y) as usize;
   let cdeffed_slice = cdeffed.slice(&PlaneOffset{x: stripe_x as isize, y: stripe_y});
   let outstride = out.cfg.stride;
-  let mut out_slice = out.mut_slice(&PlaneOffset{x: stripe_x as isize, y: stripe_y});
-  let out_data = out_slice.as_mut_slice();
+  let mut out_slice = out.as_mut_slice();
+  let out_data = out_slice.row_mut(stripe_x as isize, stripe_y as isize);
   for xi in 0..stripe_w {
     /* build intermediate array columns */
     if r0 > 0 {
@@ -347,8 +347,8 @@ fn wiener_stripe_rdu<T: Pixel>(
   }) as usize;
 
   let stride = out.cfg.stride;
-  let mut out_slice = out.mut_slice(&PlaneOffset{x: 0, y: start_yi as isize});
-  let out_data = out_slice.as_mut_slice();
+  let mut out_slice = out.as_mut_slice();
+  let out_data = out_slice.row_mut(0, start_yi as isize);
 
   for xi in stripe_x..stripe_x+stripe_w {
     let n = cmp::min(7, crop_w as isize + 3 - xi as isize);
