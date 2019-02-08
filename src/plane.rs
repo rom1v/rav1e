@@ -329,17 +329,6 @@ impl<'a> PlaneSlice<'a> {
     self.plane.data[base..].as_ptr()
   }
 
-  pub fn as_slice_clamped(&self) -> &'a [u16] {
-    let stride = self.plane.cfg.stride;
-    let y = (self.y.min(self.plane.cfg.height as isize)
-      + self.plane.cfg.yorigin as isize)
-      .max(0) as usize;
-    let x = (self.x.min(self.plane.cfg.width as isize)
-      + self.plane.cfg.xorigin as isize)
-      .max(0) as usize;
-    &self.plane.data[y * stride + x..]
-  }
-
   pub fn clamp(&self) -> PlaneSlice<'a> {
     PlaneSlice {
       plane: self.plane,
@@ -352,13 +341,6 @@ impl<'a> PlaneSlice<'a> {
         .min(self.plane.cfg.height as isize)
         .max(-(self.plane.cfg.yorigin as isize))
     }
-  }
-
-  pub fn as_slice_w_width(&self, width: usize) -> &'a [u16] {
-    let stride = self.plane.cfg.stride;
-    let base = (self.y + self.plane.cfg.yorigin as isize) as usize * stride
-      + (self.x + self.plane.cfg.xorigin as isize) as usize;
-    &self.plane.data[base..base + width]
   }
 
   pub fn iter_width(&self, width: usize) -> IterWidth<'a> {
