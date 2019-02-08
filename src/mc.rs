@@ -282,9 +282,8 @@ mod nasm {
             row_frac
           );
           let dst_stride = dst.plane.cfg.stride;
-          let dst_slice = dst.as_mut_slice();
           convert_slice_2d(
-            dst_slice.as_mut_ptr(),
+            dst.as_mut_ptr(),
             dst_stride,
             dst8.array.as_ptr(),
             width,
@@ -352,9 +351,8 @@ mod nasm {
           height as i32
         );
         let dst_stride = dst.plane.cfg.stride;
-        let dst_slice = dst.as_mut_slice();
         convert_slice_2d(
-          dst_slice.as_mut_ptr(),
+          dst.as_mut_ptr(),
           dst_stride,
           dst8.array.as_ptr(),
           width,
