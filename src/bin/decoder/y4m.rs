@@ -7,6 +7,7 @@ use crate::decoder::VideoDetails;
 use crate::ChromaSamplePosition;
 use crate::ChromaSampling;
 use crate::encoder::Frame;
+use rav1e::plane::CopyFromRawBytes;
 
 impl Decoder for y4m::Decoder<'_, Box<dyn Read>> {
   fn get_video_details(&self) -> VideoDetails {

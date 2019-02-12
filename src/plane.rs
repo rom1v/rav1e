@@ -46,6 +46,10 @@ impl Debug for Plane {
   }
 }
 
+pub trait CopyFromRawBytes {
+  fn copy_from_raw_u8(&mut self, src: &[u8], src_stride: usize, src_bytewidth: usize);
+}
+
 impl Plane {
   /// Stride alignment in bytes.
   const STRIDE_ALIGNMENT_LOG2: usize = 4;
@@ -161,32 +165,6 @@ impl Plane {
     &mut self.data[i..]
   }
 
-  pub fn copy_from_raw_u8(
-    &mut self, source: &[u8], source_stride: usize, source_bytewidth: usize
-  ) {
-    let stride = self.cfg.stride;
-    for (self_row, source_row) in self
-      .data_origin_mut()
-      .chunks_mut(stride)
-      .zip(source.chunks(source_stride))
-    {
-      match source_bytewidth {
-        1 => for (self_pixel, source_pixel) in
-          self_row.iter_mut().zip(source_row.iter())
-        {
-          *self_pixel = *source_pixel as u16;
-        },
-        2 => for (self_pixel, bytes) in
-          self_row.iter_mut().zip(source_row.chunks(2))
-        {
-          *self_pixel = (bytes[1] as u16) << 8 | (bytes[0] as u16);
-        },
-
-        _ => {}
-      }
-    }
-  }
-
   pub fn downsample_from(&mut self, src: &Plane) {
     let width = self.cfg.width;
     let height = self.cfg.height;
@@ -213,6 +191,32 @@ impl Plane {
   /// Iterates over the pixels in the `Plane`, skipping stride data.
   pub fn iter(&self) -> PlaneIter<'_> {
     PlaneIter::new(self)
+  }
+}
+
+impl CopyFromRawBytes for Plane {
+  fn copy_from_raw_u8(&mut self, source: &[u8], source_stride: usize, source_bytewidth: usize) {
+    let stride = self.cfg.stride;
+    for (self_row, source_row) in self
+      .data_origin_mut()
+      .chunks_mut(stride)
+      .zip(source.chunks(source_stride))
+    {
+      match source_bytewidth {
+        1 => for (self_pixel, source_pixel) in
+          self_row.iter_mut().zip(source_row.iter())
+        {
+          *self_pixel = *source_pixel as u16;
+        },
+        2 => for (self_pixel, bytes) in
+          self_row.iter_mut().zip(source_row.chunks(2))
+        {
+          *self_pixel = (bytes[1] as u16) << 8 | (bytes[0] as u16);
+        },
+
+        _ => {}
+      }
+    }
   }
 }
 
