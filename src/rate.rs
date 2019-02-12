@@ -12,6 +12,7 @@ use crate::quantize::ac_q;
 use crate::quantize::dc_q;
 use crate::quantize::select_ac_qi;
 use crate::quantize::select_dc_qi;
+use crate::util::Pixel;
 
 // The number of frame sub-types for which we track distinct parameters.
 pub const FRAME_NSUBTYPES: usize = 4;
@@ -260,8 +261,8 @@ impl RCState {
   }
 
   // TODO: Separate quantizers for Cb and Cr.
-  pub fn select_qi(
-    &self, fi: &FrameInvariants, fti: usize
+  pub fn select_qi<T: Pixel>(
+    &self, fi: &FrameInvariants<T>, fti: usize
   ) -> QuantizerParameters {
     // Rate control is not active.
     // Derive quantizer directly from frame type.

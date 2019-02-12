@@ -12,6 +12,8 @@ pub use self::nasm::*;
 #[cfg(any(not(target_arch = "x86_64"), windows, not(feature = "nasm")))]
 pub use self::native::*;
 
+use crate::util::Pixel;
+
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub enum FilterMode {
   REGULAR = 0,
@@ -248,8 +250,8 @@ mod nasm {
     );
   }
 
-  pub fn put_8tap<'a>(
-    dst: &'a mut PlaneMutSlice<'a>, src: PlaneSlice<'_>, width: usize,
+  pub fn put_8tap<'a, T: Pixel>(
+    dst: &'a mut PlaneMutSlice<'a, T>, src: PlaneSlice<'_, T>, width: usize,
     height: usize, col_frac: i32, row_frac: i32, mode_x: FilterMode,
     mode_y: FilterMode, bit_depth: usize
   ) {
@@ -298,8 +300,8 @@ mod nasm {
     );
   }
 
-  pub fn prep_8tap<'a>(
-    tmp: &mut [i16], src: PlaneSlice<'_>, width: usize, height: usize,
+  pub fn prep_8tap<'a, T: Pixel>(
+    tmp: &mut [i16], src: PlaneSlice<'_, T>, width: usize, height: usize,
     col_frac: i32, row_frac: i32, mode_x: FilterMode, mode_y: FilterMode,
     bit_depth: usize
   ) {
@@ -333,8 +335,8 @@ mod nasm {
     }
   }
 
-  pub fn mc_avg<'a>(
-    dst: &'a mut PlaneMutSlice<'a>, tmp1: &[i16], tmp2: &[i16], width: usize,
+  pub fn mc_avg<'a, T: Pixel>(
+    dst: &'a mut PlaneMutSlice<'a, T>, tmp1: &[i16], tmp2: &[i16], width: usize,
     height: usize, bit_depth: usize
   ) {
     if is_x86_feature_detected!("avx2") && bit_depth == 8 {
@@ -394,8 +396,8 @@ mod native {
     SUBPEL_FILTERS[filter_idx][frac as usize]
   }
 
-  pub fn put_8tap<'a>(
-    dst: &'a mut PlaneMutSlice<'a>, src: PlaneSlice<'_>, width: usize,
+  pub fn put_8tap<'a, T: Pixel>(
+    dst: &'a mut PlaneMutSlice<'a, T>, src: PlaneSlice<'_, T>, width: usize,
     height: usize, col_frac: i32, row_frac: i32, mode_x: FilterMode,
     mode_y: FilterMode, bit_depth: usize
   ) {
@@ -480,8 +482,8 @@ mod native {
     }
   }
 
-  pub fn prep_8tap<'a>(
-    tmp: &mut [i16], src: PlaneSlice<'_>, width: usize, height: usize,
+  pub fn prep_8tap<'a, T: Pixel>(
+    tmp: &mut [i16], src: PlaneSlice<'_, T>, width: usize, height: usize,
     col_frac: i32, row_frac: i32, mode_x: FilterMode, mode_y: FilterMode,
     bit_depth: usize
   ) {
@@ -552,8 +554,8 @@ mod native {
     }
   }
 
-  pub fn mc_avg<'a>(
-    dst: &'a mut PlaneMutSlice<'a>, tmp1: &[i16], tmp2: &[i16], width: usize,
+  pub fn mc_avg<'a, T: Pixel>(
+    dst: &'a mut PlaneMutSlice<'a, T>, tmp1: &[i16], tmp2: &[i16], width: usize,
     height: usize, bit_depth: usize
   ) {
     let dst_stride = dst.plane.cfg.stride;

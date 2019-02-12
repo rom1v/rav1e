@@ -8,20 +8,21 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 use crate::encoder::Frame;
+use crate::util::Pixel;
 
 use std::sync::Arc;
 
 /// Detects fast cuts using changes in colour and intensity between frames.
 /// Since the difference between frames is used, only fast cuts are detected
 /// with this method. This is probably fine for the purpose of choosing keyframes.
-pub struct SceneChangeDetector {
+pub struct SceneChangeDetector<T: Pixel> {
   /// Minimum average difference between YUV deltas that will trigger a scene change.
   threshold: u8,
   /// Frame number and frame reference of the last frame analyzed
-  last_frame: Option<(usize, Arc<Frame>)>,
+  last_frame: Option<(usize, Arc<Frame<T>>)>,
 }
 
-impl Default for SceneChangeDetector {
+impl<T: Pixel> Default for SceneChangeDetector<T> {
   fn default() -> Self {
     Self {
       // This implementation is based on a Python implementation at
@@ -39,14 +40,14 @@ impl Default for SceneChangeDetector {
   }
 }
 
-impl SceneChangeDetector {
+impl<T: Pixel> SceneChangeDetector<T> {
   pub fn new(bit_depth: usize) -> Self {
     let mut detector = Self::default();
     detector.threshold = detector.threshold * bit_depth as u8 / 8;
     detector
   }
 
-  pub fn detect_scene_change(&mut self, curr_frame: Arc<Frame>, frame_num: usize) -> bool {
+  pub fn detect_scene_change(&mut self, curr_frame: Arc<Frame<T>>, frame_num: usize) -> bool {
     let mut is_change = false;
 
     match self.last_frame {

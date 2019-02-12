@@ -20,6 +20,7 @@ use crate::plane::PlaneOffset;
 use crate::plane::PlaneConfig;
 use std::cmp;
 use crate::util::clamp;
+use crate::util::Pixel;
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
 
@@ -71,12 +72,20 @@ impl RestorationFilter {
   }
 }
 
-fn sgrproj_box_ab(af: &mut[i32; 64+2],
-                  bf: &mut[i32; 64+2],
-                  r: isize, eps: isize,
-                  crop_w: usize, crop_h: usize, stripe_h: isize,
-                  stripe_x: isize, stripe_y: isize,
-                  cdeffed: &Plane, deblocked: &Plane, bit_depth: usize) {
+fn sgrproj_box_ab<T: Pixel>(
+  af: &mut[i32; 64+2],
+  bf: &mut[i32; 64+2],
+  r: isize,
+  eps: isize,
+  crop_w: usize,
+  crop_h: usize,
+  stripe_h: isize,
+  stripe_x: isize,
+  stripe_y: isize,
+  cdeffed: &Plane<T>,
+  deblocked: &Plane<T>,
+  bit_depth: usize,
+) {
   let n = ((2*r + 1) * (2*r + 1)) as i32;
   let one_over_n = ((1 << SGRPROJ_RECIP_BITS) + n/2 ) / n;
   let n2e = n*n*eps as i32;
@@ -133,9 +142,16 @@ fn sgrproj_box_ab(af: &mut[i32; 64+2],
   }
 }
 
-fn sgrproj_box_f(af: &[&[i32; 64+2]; 3], bf: &[&[i32; 64+2]; 3], f: &mut[i32; 64],
-                 x: usize, y: isize, h: isize, cdeffed: &Plane, pass: usize) {
-
+fn sgrproj_box_f<T: Pixel>(
+  af: &[&[i32; 64+2]; 3],
+  bf: &[&[i32; 64+2]; 3],
+  f: &mut[i32; 64],
+  x: usize,
+  y: isize,
+  h: isize,
+  cdeffed: &Plane<T>,
+  pass: usize,
+) {
   for i in 0..h as usize {
     let shift = if pass == 0 && (i&1) == 1 {4} else {5} + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS;
     let mut a = 0;
@@ -168,12 +184,20 @@ fn sgrproj_box_f(af: &[&[i32; 64+2]; 3], bf: &[&[i32; 64+2]; 3], f: &mut[i32; 64
   }
 }
 
-fn sgrproj_stripe_rdu(set: u8, xqd: [i8; 2], fi: &FrameInvariants,
-                      crop_w: usize, crop_h: usize,
-                      stripe_w: usize, stripe_h: isize,
-                      stripe_x: usize, stripe_y: isize,
-                      cdeffed: &Plane, deblocked: &Plane, out: &mut Plane) {
-
+fn sgrproj_stripe_rdu<T: Pixel>(
+  set: u8,
+  xqd: [i8; 2],
+  fi: &FrameInvariants<T>,
+  crop_w: usize,
+  crop_h: usize,
+  stripe_w: usize,
+  stripe_h: isize,
+  stripe_x: usize,
+  stripe_y: isize,
+  cdeffed: &Plane<T>,
+  deblocked: &Plane<T>,
+  out: &mut Plane<T>,
+) {
   assert!(stripe_h <= 64);
   let mut a0: [[i32; 64+2]; 3] = [[0; 64+2]; 3];
   let mut a1: [[i32; 64+2]; 3] = [[0; 64+2]; 3];
@@ -272,11 +296,19 @@ fn sgrproj_stripe_rdu(set: u8, xqd: [i8; 2], fi: &FrameInvariants,
   }
 }
 
-fn wiener_stripe_rdu(coeffs: [[i8; 3]; 2], fi: &FrameInvariants,
-                      crop_w: usize, crop_h: usize,
-                      stripe_w: usize, stripe_h: isize,
-                      stripe_x: usize, stripe_y: isize,
-                      cdeffed: &Plane, deblocked: &Plane, out: &mut Plane) {
+fn wiener_stripe_rdu<T: Pixel>(
+  coeffs: [[i8; 3]; 2],
+  fi: &FrameInvariants<T>,
+  crop_w: usize,
+  crop_h: usize,
+  stripe_w: usize,
+  stripe_h: isize,
+  stripe_x: usize,
+  stripe_y: isize,
+  cdeffed: &Plane<T>,
+  deblocked: &Plane<T>,
+  out: &mut Plane<T>
+) {
   let bit_depth = fi.sequence.bit_depth;
   let round_h = if bit_depth == 12 {5} else {3};
   let round_v = if bit_depth == 12 {9} else {11};
@@ -320,7 +352,7 @@ fn wiener_stripe_rdu(coeffs: [[i8; 3]; 2], fi: &FrameInvariants,
   for xi in stripe_x..stripe_x+stripe_w {
     let n = cmp::min(7, crop_w as isize + 3 - xi as isize);
     for yi in stripe_y-3..stripe_y+stripe_h+4 {
-      let src_plane: &Plane;
+      let src_plane: &Plane<T>;
       let mut acc = 0;
       let ly;
       if yi < stripe_y {
@@ -452,7 +484,7 @@ pub struct RestorationState {
 }
 
 impl RestorationState {
-  pub fn new(fi: &FrameInvariants, input: &Frame) -> Self {
+  pub fn new<T: Pixel>(fi: &FrameInvariants<T>, input: &Frame<T>) -> Self {
     let PlaneConfig { xdec, ydec, .. } = input.planes[1].cfg;
     let stripe_uv_decimate = if xdec>0 && ydec>0 {1} else {0};
     // Currrently opt for smallest possible restoration unit size (1
@@ -491,12 +523,12 @@ impl RestorationState {
     self.plane[pli].restoration_unit_as_mut(sbo)
   }
 
-  pub fn lrf_optimize_superblock(&mut self, _sbo: &SuperBlockOffset, _fi: &FrameInvariants,
-                                 _cw: &mut ContextWriter) {
+  pub fn lrf_optimize_superblock<T: Pixel>(&mut self, _sbo: &SuperBlockOffset, _fi: &FrameInvariants<T>,
+                                           _cw: &mut ContextWriter) {
   }
 
-  pub fn lrf_filter_frame(&mut self, out: &mut Frame, pre_cdef: &Frame,
-                          fi: &FrameInvariants) {
+  pub fn lrf_filter_frame<T: Pixel>(&mut self, out: &mut Frame<T>, pre_cdef: &Frame<T>,
+                                    fi: &FrameInvariants<T>) {
     let cdeffed = out.clone();
 
     // unlike the other loop filters that operate over the padded

@@ -41,16 +41,16 @@ extern {
 }
 
 #[derive(Debug, Clone)]
-pub struct Frame {
-  pub planes: [Plane; 3]
+pub struct Frame<T: Pixel> {
+  pub planes: [Plane<T>; 3]
 }
 
 pub static TEMPORAL_DELIMITER: [u8; 2] = [0x12, 0x00];
 
 const FRAME_MARGIN: usize = 16 + SUBPEL_FILTER_SIZE;
 
-impl Frame {
-  pub fn new(width: usize, height: usize, chroma_sampling: ChromaSampling) -> Frame {
+impl<T: Pixel> Frame<T> {
+  pub fn new(width: usize, height: usize, chroma_sampling: ChromaSampling) -> Self {
     let luma_width = width.align_power_of_two(3);
     let luma_height = height.align_power_of_two(3);
     let luma_padding = MAX_SB_SIZE + FRAME_MARGIN;
@@ -99,20 +99,20 @@ impl Frame {
   /// This data retains any padding, e.g. it uses the width and height specifed in
   /// the Y-plane's `cfg` struct, and not the display width and height specied in
   /// `FrameInvariants`.
-  pub fn iter(&self) -> PixelIter<'_> {
+  pub fn iter(&self) -> PixelIter<'_, T> {
     PixelIter::new(&self.planes)
   }
 }
 
 #[derive(Debug)]
-pub struct PixelIter<'a> {
-  planes: &'a [Plane; 3],
+pub struct PixelIter<'a, T: Pixel> {
+  planes: &'a [Plane<T>; 3],
   y: usize,
   x: usize,
 }
 
-impl<'a> PixelIter<'a> {
-  pub fn new(planes: &'a [Plane; 3]) -> Self {
+impl<'a, T: Pixel> PixelIter<'a, T> {
+  pub fn new(planes: &'a [Plane<T>; 3]) -> Self {
     PixelIter {
       planes,
       y: 0,
@@ -129,7 +129,7 @@ impl<'a> PixelIter<'a> {
   }
 }
 
-impl<'a> Iterator for PixelIter<'a> {
+impl<'a, T: Pixel> Iterator for PixelIter<'a, T> {
   type Item = (u16, u16, u16);
 
   fn next(&mut self) -> Option<<Self as Iterator>::Item> {
@@ -152,23 +152,23 @@ impl<'a> Iterator for PixelIter<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReferenceFrame {
+pub struct ReferenceFrame<T: Pixel> {
   pub order_hint: u32,
-  pub frame: Frame,
-  pub input_hres: Plane,
-  pub input_qres: Plane,
+  pub frame: Frame<T>,
+  pub input_hres: Plane<T>,
+  pub input_qres: Plane<T>,
   pub cdfs: CDFContext
 }
 
 #[derive(Debug, Clone)]
-pub struct ReferenceFramesSet {
-  pub frames: [Option<Rc<ReferenceFrame>>; (REF_FRAMES as usize)],
+pub struct ReferenceFramesSet<T: Pixel> {
+  pub frames: [Option<Rc<ReferenceFrame<T>>>; (REF_FRAMES as usize)],
   pub deblock: [DeblockState; (REF_FRAMES as usize)]
 }
 
-impl ReferenceFramesSet {
-  pub fn new() -> ReferenceFramesSet {
-    ReferenceFramesSet {
+impl<T: Pixel> ReferenceFramesSet<T> {
+  pub fn new() -> Self {
+    Self {
       frames: Default::default(),
       deblock: Default::default()
     }
@@ -333,7 +333,7 @@ impl Sequence {
     (diff & (m - 1)) - (diff & m)
   }
 
-  pub fn get_skip_mode_allowed(&self, fi: &FrameInvariants, reference_select: bool) -> bool {
+  pub fn get_skip_mode_allowed<T: Pixel>(&self, fi: &FrameInvariants<T>, reference_select: bool) -> bool {
     if fi.intra_only || !reference_select || !self.enable_order_hint {
       false
     } else {
@@ -388,11 +388,11 @@ impl Sequence {
 }
 
 #[derive(Debug)]
-pub struct FrameState {
-  pub input: Arc<Frame>,
-  pub input_hres: Plane, // half-resolution version of input luma
-  pub input_qres: Plane, // quarter-resolution version of input luma
-  pub rec: Frame,
+pub struct FrameState<T: Pixel> {
+  pub input: Arc<Frame<T>>,
+  pub input_hres: Plane<T>, // half-resolution version of input luma
+  pub input_qres: Plane<T>, // quarter-resolution version of input luma
+  pub rec: Frame<T>,
   pub qc: QuantizationContext,
   pub cdfs: CDFContext,
   pub deblock: DeblockState,
@@ -400,21 +400,21 @@ pub struct FrameState {
   pub restoration: RestorationState,
 }
 
-impl FrameState {
-  pub fn new(fi: &FrameInvariants) -> FrameState {
+impl<T: Pixel> FrameState<T> {
+  pub fn new(fi: &FrameInvariants<T>) -> Self {
     // TODO(negge): Use fi.cfg.chroma_sampling when we store VideoDetails in FrameInvariants
     FrameState::new_with_frame(fi, Arc::new(Frame::new(
       fi.width, fi.height, fi.sequence.chroma_sampling)))
   }
 
-  pub fn new_with_frame(fi: &FrameInvariants, frame: Arc<Frame>) -> FrameState {
+  pub fn new_with_frame(fi: &FrameInvariants<T>, frame: Arc<Frame<T>>) -> Self {
     let rs = RestorationState::new(fi, &frame);
     let luma_width = frame.planes[0].cfg.width;
     let luma_height = frame.planes[0].cfg.height;
     let luma_padding_x = frame.planes[0].cfg.xpad;
     let luma_padding_y = frame.planes[0].cfg.ypad;
 
-    FrameState {
+    Self {
       input: frame,
       input_hres: Plane::new(luma_width / 2, luma_height / 2, 1, 1, luma_padding_x / 2, luma_padding_y / 2),
       input_qres: Plane::new(luma_width / 4, luma_height / 4, 2, 2, luma_padding_x / 4, luma_padding_y / 4),
@@ -485,7 +485,7 @@ impl Default for SegmentationState {
 // Frame Invariants are invariant inside a frame
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct FrameInvariants {
+pub struct FrameInvariants<T: Pixel> {
   pub sequence: Sequence,
   pub width: usize,
   pub height: usize,
@@ -531,7 +531,7 @@ pub struct FrameInvariants {
   pub config: EncoderConfig,
   pub ref_frames: [u8; INTER_REFS_PER_FRAME],
   pub ref_frame_sign_bias: [bool; INTER_REFS_PER_FRAME],
-  pub rec_buffer: ReferenceFramesSet,
+  pub rec_buffer: ReferenceFramesSet<T>,
   pub base_q_idx: u8,
   pub dc_delta_q: [i8; 3],
   pub ac_delta_q: [i8; 3],
@@ -554,8 +554,8 @@ fn pos_to_lvl(pos: u64, pyramid_depth: u64) -> u64 {
   pyramid_depth - (pos | (1 << pyramid_depth)).trailing_zeros() as u64
 }
 
-impl FrameInvariants {
-  pub fn new(config: EncoderConfig, sequence: Sequence) -> FrameInvariants {
+impl<T: Pixel> FrameInvariants<T> {
+  pub fn new(config: EncoderConfig, sequence: Sequence) -> Self {
     // Speed level decides the minimum partition size, i.e. higher speed --> larger min partition size,
     // with exception that SBs on right or bottom frame borders split down to BLOCK_4X4.
     // At speed = 0, RDO search is exhaustive.
@@ -563,7 +563,7 @@ impl FrameInvariants {
     let use_reduced_tx_set = config.speed_settings.reduced_tx_set;
     let use_tx_domain_distortion = config.tune == Tune::Psnr && config.speed_settings.tx_domain_distortion;
 
-    FrameInvariants {
+    Self {
       sequence,
       width: config.width,
       height: config.height,
@@ -814,7 +814,7 @@ impl FrameInvariants {
   }
 }
 
-impl fmt::Display for FrameInvariants {
+impl<T: Pixel> fmt::Display for FrameInvariants<T> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "Frame {} - {}", self.number, self.frame_type)
   }
@@ -838,8 +838,8 @@ pub fn write_temporal_delimiter(
   Ok(())
 }
 
-fn write_obus(
-  packet: &mut dyn io::Write, fi: &mut FrameInvariants, fs: &FrameState
+fn write_obus<T: Pixel>(
+  packet: &mut dyn io::Write, fi: &mut FrameInvariants<T>, fs: &FrameState<T>
 ) -> io::Result<()> {
   let obu_extension = 0 as u32;
 
@@ -915,7 +915,7 @@ fn write_obus(
 }
 
 /// Write into `dst` the difference between the blocks at `src1` and `src2`
-fn diff(dst: &mut [i16], src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, width: usize, height: usize) {
+fn diff<T: Pixel>(dst: &mut [i16], src1: &PlaneSlice<'_, T>, src2: &PlaneSlice<'_, T>, width: usize, height: usize) {
   let src1_stride = src1.plane.cfg.stride;
   let src2_stride = src2.plane.cfg.stride;
 
@@ -928,7 +928,7 @@ fn diff(dst: &mut [i16], src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, width: us
     }
 }
 
-fn get_qidx(fi: &FrameInvariants, fs: &FrameState, cw: &ContextWriter, bo: &BlockOffset) -> u8 {
+fn get_qidx<T: Pixel>(fi: &FrameInvariants<T>, fs: &FrameState<T>, cw: &ContextWriter, bo: &BlockOffset) -> u8 {
   let mut qidx = fi.base_q_idx;
   let sidx = cw.bc.at(bo).segmentation_idx as usize;
   if fs.segmentation.features[sidx][SegLvl::SEG_LVL_ALT_Q as usize] {
@@ -941,8 +941,8 @@ fn get_qidx(fi: &FrameInvariants, fs: &FrameState, cw: &ContextWriter, bo: &Bloc
 // For a transform block,
 // predict, transform, quantize, write coefficients to a bitstream,
 // dequantize, inverse-transform.
-pub fn encode_tx_block(
-  fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter,
+pub fn encode_tx_block<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
   w: &mut dyn Writer, p: usize, bo: &BlockOffset, mode: PredictionMode,
   tx_size: TxSize, tx_type: TxType, plane_bsize: BlockSize, po: &PlaneOffset,
   skip: bool, ac: &[i16], alpha: i16, for_rdo_use: bool
@@ -1008,9 +1008,11 @@ pub fn encode_tx_block(
   (has_coeff, tx_dist)
 }
 
-pub fn motion_compensate(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter,
-                         luma_mode: PredictionMode, ref_frames: [usize; 2], mvs: [MotionVector; 2],
-                         bsize: BlockSize, bo: &BlockOffset, luma_only: bool) {
+pub fn motion_compensate<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
+  luma_mode: PredictionMode, ref_frames: [usize; 2], mvs: [MotionVector; 2],
+  bsize: BlockSize, bo: &BlockOffset, luma_only: bool
+) {
   debug_assert!(!luma_mode.is_intra());
 
   let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
@@ -1078,9 +1080,11 @@ pub fn motion_compensate(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut Con
   }
 }
 
-pub fn encode_block_a(seq: &Sequence, fs: &FrameState,
-                      cw: &mut ContextWriter, w: &mut dyn Writer,
-                      bsize: BlockSize, bo: &BlockOffset, skip: bool) -> bool {
+pub fn encode_block_a<T: Pixel>(
+  seq: &Sequence, fs: &FrameState<T>,
+  cw: &mut ContextWriter, w: &mut dyn Writer,
+  bsize: BlockSize, bo: &BlockOffset, skip: bool
+) -> bool {
   cw.bc.set_skip(bo, bsize, skip);
   if fs.segmentation.enabled && fs.segmentation.update_map && fs.segmentation.preskip {
     cw.write_segmentation(w, bo, bsize, false, fs.segmentation.last_active_segid);
@@ -1095,14 +1099,15 @@ pub fn encode_block_a(seq: &Sequence, fs: &FrameState,
   cw.bc.cdef_coded
 }
 
-pub fn encode_block_b(fi: &FrameInvariants, fs: &mut FrameState,
-                      cw: &mut ContextWriter, w: &mut dyn Writer,
-                      luma_mode: PredictionMode, chroma_mode: PredictionMode,
-                      ref_frames: [usize; 2], mvs: [MotionVector; 2],
-                      bsize: BlockSize, bo: &BlockOffset, skip: bool,
-                      cfl: CFLParams, tx_size: TxSize, tx_type: TxType,
-                      mode_context: usize, mv_stack: &[CandidateMV], for_rdo_use: bool)
-                      -> i64 {
+pub fn encode_block_b<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  cw: &mut ContextWriter, w: &mut dyn Writer,
+  luma_mode: PredictionMode, chroma_mode: PredictionMode,
+  ref_frames: [usize; 2], mvs: [MotionVector; 2],
+  bsize: BlockSize, bo: &BlockOffset, skip: bool,
+  cfl: CFLParams, tx_size: TxSize, tx_type: TxType,
+  mode_context: usize, mv_stack: &[CandidateMV], for_rdo_use: bool
+) -> i64 {
   let is_inter = !luma_mode.is_intra();
   if is_inter { assert!(luma_mode == chroma_mode); };
   let sb_size = if fi.sequence.use_128x128_superblock {
@@ -1243,8 +1248,8 @@ pub fn encode_block_b(fi: &FrameInvariants, fs: &mut FrameState,
   }
 }
 
-pub fn luma_ac(
-  ac: &mut [i16], fs: &mut FrameState, bo: &BlockOffset, bsize: BlockSize
+pub fn luma_ac<T: Pixel>(
+  ac: &mut [i16], fs: &mut FrameState<T>, bo: &BlockOffset, bsize: BlockSize
 ) {
   let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
   let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
@@ -1280,11 +1285,13 @@ pub fn luma_ac(
   }
 }
 
-pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
-                       cw: &mut ContextWriter, w: &mut dyn Writer,
-                       luma_mode: PredictionMode, chroma_mode: PredictionMode, bo: &BlockOffset,
-                       bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
-                       cfl: CFLParams, luma_only: bool, for_rdo_use: bool) -> i64 {
+pub fn write_tx_blocks<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  cw: &mut ContextWriter, w: &mut dyn Writer,
+  luma_mode: PredictionMode, chroma_mode: PredictionMode, bo: &BlockOffset,
+  bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
+  cfl: CFLParams, luma_only: bool, for_rdo_use: bool
+) -> i64 {
   let bw = bsize.width_mi() / tx_size.width_mi();
   let bh = bsize.height_mi() / tx_size.height_mi();
   let qidx = get_qidx(fi, fs, cw, bo);
@@ -1373,10 +1380,12 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
 
 // FIXME: For now, assume tx_mode is LARGEST_TX, so var-tx is not implemented yet
 // but only one tx block exist for a inter mode partition.
-pub fn write_tx_tree(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter, w: &mut dyn Writer,
-                     luma_mode: PredictionMode, bo: &BlockOffset,
-                     bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
-                     luma_only: bool, for_rdo_use: bool) -> i64 {
+pub fn write_tx_tree<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter, w: &mut dyn Writer,
+  luma_mode: PredictionMode, bo: &BlockOffset,
+  bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
+  luma_only: bool, for_rdo_use: bool
+) -> i64 {
   let bw = bsize.width_mi() / tx_size.width_mi();
   let bh = bsize.height_mi() / tx_size.height_mi();
   let qidx = get_qidx(fi, fs, cw, bo);
@@ -1433,9 +1442,11 @@ pub fn write_tx_tree(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut Context
   tx_dist
 }
 
-pub fn encode_block_with_modes(fi: &FrameInvariants, fs: &mut FrameState,
-                               cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
-                               bsize: BlockSize, bo: &BlockOffset, mode_decision: &RDOPartitionOutput) {
+pub fn encode_block_with_modes<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
+  bsize: BlockSize, bo: &BlockOffset, mode_decision: &RDOPartitionOutput
+) {
   let (mode_luma, mode_chroma) =
     (mode_decision.pred_mode_luma, mode_decision.pred_mode_chroma);
   let cfl = mode_decision.pred_cfl_params;
@@ -1460,8 +1471,8 @@ pub fn encode_block_with_modes(fi: &FrameInvariants, fs: &mut FrameState,
                  tx_size, tx_type, mode_context, &mv_stack, false);
 }
 
-fn encode_partition_bottomup(
-  fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter,
+fn encode_partition_bottomup<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
   w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer, bsize: BlockSize,
   bo: &BlockOffset, pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5],
   ref_rd_cost: f64
@@ -1661,10 +1672,11 @@ fn encode_partition_bottomup(
   rdo_output
 }
 
-fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
-                            cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
-                            bsize: BlockSize, bo: &BlockOffset, block_output: &Option<RDOOutput>,
-                            pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5]
+fn encode_partition_topdown<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
+  bsize: BlockSize, bo: &BlockOffset, block_output: &Option<RDOOutput>,
+  pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5]
 ) {
 
   if bo.x >= cw.bc.cols || bo.y >= cw.bc.rows {
@@ -1868,7 +1880,7 @@ fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
     }
 }
 
-fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
+fn encode_tile<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec<u8> {
   let mut w = WriterEncoder::new();
 
   let fc = if fi.primary_ref_frame == PRIMARY_REF_NONE {
@@ -2036,7 +2048,7 @@ fn write_tile_group_header(tile_start_and_end_present_flag: bool) ->
     buf.clone()
   }
 
-pub fn encode_frame(fi: &mut FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
+pub fn encode_frame<T: Pixel>(fi: &mut FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec<u8> {
   let mut packet = Vec::new();
   if fi.show_existing_frame {
     write_obus(&mut packet, fi, fs).unwrap();
@@ -2091,7 +2103,7 @@ pub fn encode_frame(fi: &mut FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
   packet
 }
 
-pub fn update_rec_buffer(fi: &mut FrameInvariants, fs: FrameState) {
+pub fn update_rec_buffer<T: Pixel>(fi: &mut FrameInvariants<T>, fs: FrameState<T>) {
   let rfs = Rc::new(
     ReferenceFrame {
       order_hint: fi.order_hint,

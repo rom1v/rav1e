@@ -13,7 +13,7 @@ use crate::context::*;
 use crate::Frame;
 use crate::FrameInvariants;
 use crate::plane::*;
-use crate::util::{clamp, msb};
+use crate::util::{clamp, msb, Pixel};
 
 use std::cmp;
 
@@ -206,11 +206,13 @@ fn adjust_strength(strength: i32, var: i32) -> i32 {
 // in_frame is padded.  Blocks are not scanned outside the block
 // boundaries (padding is untouched here).
 
-pub fn cdef_analyze_superblock(in_frame: &mut Frame,
-                               bc_global: &mut BlockContext,
-                               sbo: &SuperBlockOffset,
-                               sbo_global: &SuperBlockOffset,
-                               bit_depth: usize) -> CdefDirections {
+pub fn cdef_analyze_superblock<T: Pixel>(
+  in_frame: &mut Frame<T>,
+  bc_global: &mut BlockContext,
+  sbo: &SuperBlockOffset,
+  sbo_global: &SuperBlockOffset,
+  bit_depth: usize,
+) -> CdefDirections {
   let coeff_shift = bit_depth as i32 - 8;
   let mut dir: CdefDirections = CdefDirections {dir: [[0; 8]; 8], var: [[0; 8]; 8]};
   // Each direction block is 8x8 in y, and direction computation only looks at y
@@ -244,7 +246,7 @@ pub fn cdef_analyze_superblock(in_frame: &mut Frame,
 }
 
 
-pub fn cdef_sb_frame(fi: &FrameInvariants, f: &Frame) -> Frame {
+pub fn cdef_sb_frame<T: Pixel>(fi: &FrameInvariants<T>, f: &Frame<T>) -> Frame<T> {
   let sb_size = if fi.sequence.use_128x128_superblock {128} else {64};
 
   Frame {
@@ -259,8 +261,10 @@ pub fn cdef_sb_frame(fi: &FrameInvariants, f: &Frame) -> Frame {
   }
 }
 
-pub fn cdef_sb_padded_frame_copy(fi: &FrameInvariants, sbo: &SuperBlockOffset,
-                                 f: &Frame, pad: usize) -> Frame {
+pub fn cdef_sb_padded_frame_copy<T: Pixel>(
+  fi: &FrameInvariants<T>, sbo: &SuperBlockOffset,
+  f: &Frame<T>, pad: usize
+) -> Frame<T> {
   let ipad = pad as isize;
   let sb_size = if fi.sequence.use_128x128_superblock {128} else {64};
   let mut out = Frame {
@@ -314,14 +318,16 @@ pub fn cdef_sb_padded_frame_copy(fi: &FrameInvariants, sbo: &SuperBlockOffset,
 // We assume in is padded, and the area we'll write out is at least as
 // large as the unpadded area of in
 // cdef_index is taken from the block context
-pub fn cdef_filter_superblock(fi: &FrameInvariants,
-                              in_frame: &mut Frame,
-                              out_frame: &mut Frame,
-                              bc_global: &mut BlockContext,
-                              sbo: &SuperBlockOffset,
-                              sbo_global: &SuperBlockOffset,
-                              cdef_index: u8,
-                              cdef_dirs: &CdefDirections) {
+pub fn cdef_filter_superblock<T: Pixel>(
+  fi: &FrameInvariants<T>,
+  in_frame: &mut Frame<T>,
+  out_frame: &mut Frame<T>,
+  bc_global: &mut BlockContext,
+  sbo: &SuperBlockOffset,
+  sbo_global: &SuperBlockOffset,
+  cdef_index: u8,
+  cdef_dirs: &CdefDirections,
+) {
   let coeff_shift = fi.sequence.bit_depth as i32 - 8;
   let cdef_damping = fi.cdef_damping as i32;
   let cdef_y_strength = fi.cdef_y_strengths[cdef_index as usize];
@@ -400,7 +406,7 @@ pub fn cdef_filter_superblock(fi: &FrameInvariants,
 // CDEF parameters are stored for each 64 by 64 block of pixels.
 // The CDEF filter is applied on each 8 by 8 block of pixels.
 // Reference: http://av1-spec.argondesign.com/av1-spec/av1-spec.html#cdef-process
-pub fn cdef_filter_frame(fi: &FrameInvariants, rec: &mut Frame, bc: &mut BlockContext) {
+pub fn cdef_filter_frame<T: Pixel>(fi: &FrameInvariants<T>, rec: &mut Frame<T>, bc: &mut BlockContext) {
 
   // Each filter block is 64x64, except right and/or bottom for non-multiple-of-64 sizes.
   // FIXME: 128x128 SB support will break this, we need FilterBlockOffset etc.

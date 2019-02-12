@@ -29,6 +29,7 @@ use crate::predict::{RAV1E_INTRA_MODES, RAV1E_INTER_MODES_MINIMAL, RAV1E_INTER_C
 use crate::Tune;
 use crate::write_tx_blocks;
 use crate::write_tx_tree;
+use crate::util::Pixel;
 
 use std;
 use std::vec::Vec;
@@ -57,8 +58,8 @@ pub struct RDOPartitionOutput {
 }
 
 #[allow(unused)]
-fn cdef_dist_wxh_8x8(
-  src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, bit_depth: usize
+fn cdef_dist_wxh_8x8<T: Pixel>(
+  src1: &PlaneSlice<'_, T>, src2: &PlaneSlice<'_, T>, bit_depth: usize
 ) -> u64 {
   let coeff_shift = bit_depth - 8;
 
@@ -88,8 +89,8 @@ fn cdef_dist_wxh_8x8(
 }
 
 #[allow(unused)]
-fn cdef_dist_wxh(
-  src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, w: usize, h: usize,
+fn cdef_dist_wxh<T: Pixel>(
+  src1: &PlaneSlice<'_, T>, src2: &PlaneSlice<'_, T>, w: usize, h: usize,
   bit_depth: usize
 ) -> u64 {
   assert!(w & 0x7 == 0);
@@ -109,8 +110,8 @@ fn cdef_dist_wxh(
 }
 
 // Sum of Squared Error for a wxh block
-pub fn sse_wxh(
-  src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, w: usize, h: usize
+pub fn sse_wxh<T: Pixel>(
+  src1: &PlaneSlice<'_, T>, src2: &PlaneSlice<'_, T>, w: usize, h: usize
 ) -> u64 {
   assert!(w & (MI_SIZE - 1) == 0);
   assert!(h & (MI_SIZE - 1) == 0);
@@ -135,8 +136,8 @@ pub fn sse_wxh(
 }
 
 // Compute the pixel-domain distortion for an encode
-fn compute_distortion(
-  fi: &FrameInvariants, fs: &FrameState, w_y: usize, h_y: usize,
+fn compute_distortion<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &FrameState<T>, w_y: usize, h_y: usize,
   is_chroma_block: bool, bo: &BlockOffset,
   luma_only: bool
 ) -> u64 {
@@ -191,8 +192,8 @@ fn compute_distortion(
 }
 
 // Compute the transform-domain distortion for an encode
-fn compute_tx_distortion(
-  fi: &FrameInvariants, fs: &FrameState, w_y: usize, h_y: usize,
+fn compute_tx_distortion<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &FrameState<T>, w_y: usize, h_y: usize,
   is_chroma_block: bool, bo: &BlockOffset, tx_dist: i64,
   skip: bool, luma_only: bool
 ) -> u64 {
@@ -240,13 +241,13 @@ fn compute_tx_distortion(
   distortion
 }
 
-fn compute_rd_cost(fi: &FrameInvariants, rate: u32, distortion: u64) -> f64 {
+fn compute_rd_cost<T: Pixel>(fi: &FrameInvariants<T>, rate: u32, distortion: u64) -> f64 {
   let rate_in_bits = (rate as f64) / ((1 << OD_BITRES) as f64);
   (distortion as f64) + fi.lambda * rate_in_bits
 }
 
-pub fn rdo_tx_size_type(
-  fi: &FrameInvariants, fs: &mut FrameState,
+pub fn rdo_tx_size_type<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
   cw: &mut ContextWriter, bsize: BlockSize, bo: &BlockOffset,
   luma_mode: PredictionMode, ref_frames: [usize; 2], mvs: [MotionVector; 2], skip: bool
 ) -> (TxSize, TxType) {
@@ -329,9 +330,10 @@ impl Default for EncodingSettings {
   }
 }
 // RDO-based mode decision
-pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
-                         cw: &mut ContextWriter, bsize: BlockSize, bo: &BlockOffset,
-                         pmvs: &[Option<MotionVector>]
+pub fn rdo_mode_decision<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  cw: &mut ContextWriter, bsize: BlockSize, bo: &BlockOffset,
+  pmvs: &[Option<MotionVector>]
 ) -> RDOPartitionOutput {
   let mut best = EncodingSettings::default();
 
@@ -746,9 +748,10 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
   }
 }
 
-pub fn rdo_cfl_alpha(
-  fs: &mut FrameState, bo: &BlockOffset, bsize: BlockSize, bit_depth: usize,
-  chroma_sampling: ChromaSampling) -> Option<CFLParams> {
+pub fn rdo_cfl_alpha<T: Pixel>(
+  fs: &mut FrameState<T>, bo: &BlockOffset, bsize: BlockSize, bit_depth: usize,
+  chroma_sampling: ChromaSampling
+) -> Option<CFLParams> {
   let uv_tx_size = bsize.largest_uv_tx_size(chroma_sampling);
 
   let mut ac = [0i16; 32 * 32];
@@ -794,8 +797,8 @@ pub fn rdo_cfl_alpha(
 }
 
 // RDO-based transform type decision
-pub fn rdo_tx_type_decision(
-  fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter,
+pub fn rdo_tx_type_decision<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
   mode: PredictionMode, ref_frames: [usize; 2], mvs: [MotionVector; 2],
   bsize: BlockSize, bo: &BlockOffset, tx_size: TxSize, tx_set: TxSet
 ) -> TxType {
@@ -894,8 +897,12 @@ pub fn get_sub_partitions<'a>(four_partitions: &[&'a BlockOffset; 4],
   partitions
 }
 
-pub fn get_sub_partitions_with_border_check<'a>(four_partitions: &[&'a BlockOffset; 4],
-                                                partition: PartitionType, fi: &FrameInvariants, subsize: BlockSize) -> Vec<&'a BlockOffset> {
+pub fn get_sub_partitions_with_border_check<'a, T: Pixel>(
+  four_partitions: &[&'a BlockOffset; 4],
+  partition: PartitionType,
+  fi: &FrameInvariants<T>,
+  subsize: BlockSize
+) -> Vec<&'a BlockOffset> {
   let mut partitions = vec![ four_partitions[0] ];
 
   if partition == PARTITION_NONE {
@@ -924,8 +931,8 @@ pub fn get_sub_partitions_with_border_check<'a>(four_partitions: &[&'a BlockOffs
 }
 
 // RDO-based single level partitioning decision
-pub fn rdo_partition_decision(
-  fi: &FrameInvariants, fs: &mut FrameState,
+pub fn rdo_partition_decision<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
   bsize: BlockSize, bo: &BlockOffset,
   cached_block: &RDOOutput, pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5],
@@ -1054,8 +1061,10 @@ pub fn rdo_partition_decision(
   }
 }
 
-pub fn rdo_cdef_decision(sbo: &SuperBlockOffset, fi: &FrameInvariants,
-                         fs: &FrameState, cw: &mut ContextWriter) -> u8 {
+pub fn rdo_cdef_decision<T: Pixel>(
+  sbo: &SuperBlockOffset, fi: &FrameInvariants<T>,
+  fs: &FrameState<T>, cw: &mut ContextWriter
+) -> u8 {
   // Construct a single-superblock-sized frame to test-filter into
   let sbo_0 = SuperBlockOffset { x: 0, y: 0 };
   let bc = &mut cw.bc;
