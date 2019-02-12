@@ -16,11 +16,13 @@ use crate::FrameInvariants;
 use crate::FrameState;
 use crate::partition::*;
 use crate::plane::*;
+use crate::util::Pixel;
 
 #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
 mod nasm {
   use crate::plane::*;
   use crate::util::*;
+  use std::mem;
 
   use libc;
 
@@ -57,14 +59,14 @@ mod nasm {
   }
 
   #[target_feature(enable = "ssse3")]
-  unsafe fn sad_ssse3(
-    plane_org: &PlaneSlice<'_>, plane_ref: &PlaneSlice<'_>, blk_h: usize,
+  unsafe fn sad_ssse3<T: Pixel>(
+    plane_org: &PlaneSlice<'_, T>, plane_ref: &PlaneSlice<'_, T>, blk_h: usize,
     blk_w: usize, bit_depth: usize
   ) -> u32 {
+    assert!(mem::size_of::<T>() == 2, "only implemented for u16 for now");
     let mut sum = 0 as u32;
-    // TODO: stride *2??? What is the correct way to do this?
-    let org_stride = plane_org.plane.cfg.stride as libc::ptrdiff_t * 2;
-    let ref_stride = plane_ref.plane.cfg.stride as libc::ptrdiff_t * 2;
+    let org_stride = (plane_org.plane.cfg.stride * mem::size_of::<T>()) as libc::ptrdiff_t;
+    let ref_stride = (plane_ref.plane.cfg.stride * mem::size_of::<T>()) as libc::ptrdiff_t;
     assert!(blk_h >= 4 && blk_w >= 4);
     let step_size =
       blk_h.min(blk_w).min(if bit_depth <= 10 { 128 } else { 4 });
@@ -83,6 +85,9 @@ mod nasm {
         let ref_slice = plane_ref.subslice(c, r);
         let org_ptr = org_slice.as_slice().as_ptr();
         let ref_ptr = ref_slice.as_slice().as_ptr();
+        // FIXME for now, T == u16
+        let org_ptr = org_ptr as *const u16;
+        let ref_ptr = ref_ptr as *const u16;
         sum += func(org_ptr, org_stride, ref_ptr, ref_stride);
       }
     }
@@ -90,8 +95,8 @@ mod nasm {
   }
 
   #[inline(always)]
-  pub fn get_sad(
-    plane_org: &PlaneSlice<'_>, plane_ref: &PlaneSlice<'_>, blk_h: usize,
+  pub fn get_sad<T: Pixel>(
+    plane_org: &PlaneSlice<'_, T>, plane_ref: &PlaneSlice<'_, T>, blk_h: usize,
     blk_w: usize, bit_depth: usize
   ) -> u32 {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
@@ -108,10 +113,11 @@ mod nasm {
 
 mod native {
   use crate::plane::*;
+  use crate::util::*;
 
   #[inline(always)]
-  pub fn get_sad(
-    plane_org: &PlaneSlice<'_>, plane_ref: &PlaneSlice<'_>, blk_h: usize,
+  pub fn get_sad<T: Pixel>(
+    plane_org: &PlaneSlice<'_, T>, plane_ref: &PlaneSlice<'_, T>, blk_h: usize,
     blk_w: usize, _bit_depth: usize
   ) -> u32 {
     let mut sum = 0 as u32;
@@ -123,7 +129,7 @@ mod native {
       sum += slice_org
         .iter()
         .zip(slice_ref)
-        .map(|(&a, &b)| (a as i32 - b as i32).abs() as u32)
+        .map(|(&a, &b)| (i32::cast_from(a) - i32::cast_from(b)).abs() as u32)
         .sum::<u32>();
     }
 
@@ -131,8 +137,8 @@ mod native {
   }
 }
 
-fn get_mv_range(
-  fi: &FrameInvariants, bo: &BlockOffset, blk_w: usize, blk_h: usize
+fn get_mv_range<T: Pixel>(
+  fi: &FrameInvariants<T>, bo: &BlockOffset, blk_w: usize, blk_h: usize
 ) -> (isize, isize, isize, isize) {
   let border_w = 128 + blk_w as isize * 8;
   let border_h = 128 + blk_h as isize * 8;
@@ -144,8 +150,8 @@ fn get_mv_range(
   (mvx_min, mvx_max, mvy_min, mvy_max)
 }
 
-pub fn motion_estimation(
-  fi: &FrameInvariants, fs: &FrameState, bsize: BlockSize, bo: &BlockOffset,
+pub fn motion_estimation<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &FrameState<T>, bsize: BlockSize, bo: &BlockOffset,
   ref_frame: usize, cmv: MotionVector, pmv: &[MotionVector; 2]
 ) -> MotionVector {
   match fi.rec_buffer.frames[fi.ref_frames[ref_frame - LAST_FRAME] as usize] {
@@ -258,9 +264,9 @@ pub fn motion_estimation(
   }
 }
 
-fn full_search(
+fn full_search<T: Pixel>(
   x_lo: isize, x_hi: isize, y_lo: isize, y_hi: isize, blk_h: usize,
-  blk_w: usize, p_org: &Plane, p_ref: &Plane, best_mv: &mut MotionVector,
+  blk_w: usize, p_org: &Plane<T>, p_ref: &Plane<T>, best_mv: &mut MotionVector,
   lowest_cost: &mut u64, po: &PlaneOffset, step: usize, bit_depth: usize,
   lambda: u32, pmv: &[MotionVector; 2], allow_high_precision_mv: bool
 ) {
@@ -292,7 +298,7 @@ fn full_search(
 }
 
 // Adjust block offset such that entire block lies within frame boundaries
-fn adjust_bo(bo: &BlockOffset, fi: &FrameInvariants, blk_w: usize, blk_h: usize) -> BlockOffset {
+fn adjust_bo<T: Pixel>(bo: &BlockOffset, fi: &FrameInvariants<T>, blk_w: usize, blk_h: usize) -> BlockOffset {
   BlockOffset {
     x: (bo.x as isize).min(fi.w_in_b as isize - blk_w as isize / 4).max(0) as usize,
     y: (bo.y as isize).min(fi.h_in_b as isize - blk_h as isize / 4).max(0) as usize
@@ -312,8 +318,8 @@ fn get_mv_rate(a: MotionVector, b: MotionVector, allow_high_precision_mv: bool) 
   diff_to_rate(a.row - b.row, allow_high_precision_mv) + diff_to_rate(a.col - b.col, allow_high_precision_mv)
 }
 
-pub fn estimate_motion_ss4(
-  fi: &FrameInvariants, fs: &FrameState, bsize: BlockSize, ref_idx: usize,
+pub fn estimate_motion_ss4<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &FrameState<T>, bsize: BlockSize, ref_idx: usize,
   bo: &BlockOffset
 ) -> Option<MotionVector> {
   if let Some(ref rec) = fi.rec_buffer.frames[ref_idx] {
@@ -363,8 +369,8 @@ pub fn estimate_motion_ss4(
   }
 }
 
-pub fn estimate_motion_ss2(
-  fi: &FrameInvariants, fs: &FrameState, bsize: BlockSize, ref_idx: usize,
+pub fn estimate_motion_ss2<T: Pixel>(
+  fi: &FrameInvariants<T>, fs: &FrameState<T>, bsize: BlockSize, ref_idx: usize,
   bo: &BlockOffset, pmvs: &[Option<MotionVector>; 3]
 ) -> Option<MotionVector> {
   if let Some(ref rec) = fi.rec_buffer.frames[ref_idx] {
@@ -425,7 +431,7 @@ pub mod test {
   use crate::partition::BlockSize::*;
 
   // Generate plane data for get_sad_same()
-  fn setup_sad() -> (Plane, Plane) {
+  fn setup_sad() -> (Plane<u16>, Plane<u16>) {
     let mut input_plane = Plane::new(640, 480, 0, 0, 128 + 8, 128 + 8);
     let mut rec_plane = input_plane.clone();
 
