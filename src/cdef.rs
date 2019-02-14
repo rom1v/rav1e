@@ -13,9 +13,10 @@ use crate::context::*;
 use crate::Frame;
 use crate::FrameInvariants;
 use crate::plane::*;
-use crate::util::{clamp, msb, Pixel};
+use crate::util::{clamp, msb, Pixel, CastFromPrimitive};
 
 use std::cmp;
+use num_traits::*;
 
 pub struct CdefDirections {
   dir: [[u8; 8]; 8],
@@ -154,15 +155,16 @@ unsafe fn cdef_filter_block<T: Pixel>(
       let mut sum = 0 as i32;
       let mut max = x;
       let mut min = x;
+      let x_i32 = i32::cast_from(x);
       for k in 0..2usize {
         let p0 = *ptr_in.offset(cdef_directions[dir][k]);
         let p1 = *ptr_in.offset(-cdef_directions[dir][k]);
-        sum += pri_taps[k] * constrain(p0 as i32 - x as i32, pri_strength, pri_damping);
-        sum += pri_taps[k] * constrain(p1 as i32 - x as i32, pri_strength, pri_damping);
-        if p0 != CDEF_VERY_LARGE {
+        sum += pri_taps[k] * constrain(i32::cast_from(p0) - i32::cast_from(x), pri_strength, pri_damping);
+        sum += pri_taps[k] * constrain(i32::cast_from(p1) - i32::cast_from(x), pri_strength, pri_damping);
+        if u16::cast_from(p0) != CDEF_VERY_LARGE {
           max = cmp::max(p0, max);
         }
-        if p1 != CDEF_VERY_LARGE {
+        if u16::cast_from(p1) != CDEF_VERY_LARGE {
           max = cmp::max(p1, max);
         }
         min = cmp::min(p0, min);
@@ -171,29 +173,29 @@ unsafe fn cdef_filter_block<T: Pixel>(
         let s1 = *ptr_in.offset(-cdef_directions[(dir + 2) & 7][k]);
         let s2 = *ptr_in.offset(cdef_directions[(dir + 6) & 7][k]);
         let s3 = *ptr_in.offset(-cdef_directions[(dir + 6) & 7][k]);
-        if s0 != CDEF_VERY_LARGE {
+        if u16::cast_from(s0) != CDEF_VERY_LARGE {
           max = cmp::max(s0, max);
         }
-        if s1 != CDEF_VERY_LARGE {
+        if u16::cast_from(s1) != CDEF_VERY_LARGE {
           max = cmp::max(s1, max);
         }
-        if s2 != CDEF_VERY_LARGE {
+        if u16::cast_from(s2) != CDEF_VERY_LARGE {
           max = cmp::max(s2, max);
         }
-        if s3 != CDEF_VERY_LARGE {
+        if u16::cast_from(s3) != CDEF_VERY_LARGE {
           max = cmp::max(s3, max);
         }
         min = cmp::min(s0, min);
         min = cmp::min(s1, min);
         min = cmp::min(s2, min);
         min = cmp::min(s3, min);
-        sum += sec_taps[k] * constrain(s0 as i32 - x as i32, sec_strength, sec_damping);
-        sum += sec_taps[k] * constrain(s1 as i32 - x as i32, sec_strength, sec_damping);
-        sum += sec_taps[k] * constrain(s2 as i32 - x as i32, sec_strength, sec_damping);
-        sum += sec_taps[k] * constrain(s3 as i32 - x as i32, sec_strength, sec_damping);
+        sum += sec_taps[k] * constrain(i32::cast_from(s0) - i32::cast_from(x), sec_strength, sec_damping);
+        sum += sec_taps[k] * constrain(i32::cast_from(s1) - i32::cast_from(x), sec_strength, sec_damping);
+        sum += sec_taps[k] * constrain(i32::cast_from(s2) - i32::cast_from(x), sec_strength, sec_damping);
+        sum += sec_taps[k] * constrain(i32::cast_from(s3) - i32::cast_from(x), sec_strength, sec_damping);
       }
-      *ptr_out = clamp(x as i32 + ((8 + sum - (sum < 0) as i32) >> 4), min as i32,
-                                   max as i32) as u16;
+      let v = T::cast_from(i32::cast_from(x) + ((8 + sum - (sum < 0) as i32) >> 4));
+      *ptr_out = clamp(v, min, max);
     }
   }
 }
