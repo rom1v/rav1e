@@ -70,8 +70,8 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   let mut sum_sd: i64 = 0;
   for j in 0..8 {
     for i in 0..8 {
-      let s = src1.p(i, j) as i32;
-      let d = src2.p(i, j) as i32;
+      let s: i32 = src1.p(i, j).as_();
+      let d: i32 = src2.p(i, j).as_();
       sum_s += s;
       sum_d += d;
       sum_s2 += (s * s) as i64;
@@ -127,7 +127,9 @@ pub fn sse_wxh<T: Pixel>(
       .iter()
       .zip(s2)
       .map(|(&a, &b)| {
-        let c = (a as i16 - b as i16) as i32;
+        let a: i16 = a.as_();
+        let b: i16 = b.as_();
+        let c = (a - b) as i32;
         (c * c) as u32
       }).sum::<u32>();
     sse += row_sse as u64;
@@ -438,7 +440,7 @@ pub fn rdo_mode_decision<T: Pixel>(
   }
 
   let luma_rdo = |luma_mode: PredictionMode,
-  fs: &mut FrameState,
+  fs: &mut FrameState<T>,
   cw: &mut ContextWriter,
   best: &mut EncodingSettings,
   mvs: [MotionVector; 2],
