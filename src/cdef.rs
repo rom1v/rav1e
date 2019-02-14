@@ -16,6 +16,7 @@ use crate::plane::*;
 use crate::util::{clamp, msb, Pixel, CastFromPrimitive};
 
 use std::cmp;
+use std::mem;
 use num_traits::*;
 
 pub struct CdefDirections {
@@ -133,6 +134,7 @@ unsafe fn cdef_filter_block<T: Pixel>(
   dir: usize, pri_damping: i32, sec_damping: i32,
   xsize: isize, ysize: isize, coeff_shift: i32
 ) {
+  assert!(mem::size_of::<T>() == 16, "not implemented for u8 yet");
   let cdef_pri_taps = [[4, 2], [3, 3]];
   let cdef_sec_taps = [[2, 1], [2, 1]];
   let pri_taps = cdef_pri_taps[((pri_strength >> coeff_shift) & 1) as usize];
@@ -269,6 +271,7 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
   fi: &FrameInvariants<T>, sbo: &SuperBlockOffset,
   f: &Frame<T>, pad: usize
 ) -> Frame<T> {
+  assert!(mem::size_of::<T>() == 16, "not implemented for u8 yet");
   let ipad = pad as isize;
   let sb_size = if fi.sequence.use_128x128_superblock {128} else {64};
   let mut out = Frame {
@@ -293,7 +296,10 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
       let out_row = out_slice.as_mut_slice();
       if offset.y + y < ipad || offset.y+y >= h + ipad {
         // above or below the frame, fill with flag
-        for x in 0..(sb_size>>xdec) + pad*2 { out_row[x] = CDEF_VERY_LARGE; }
+        for x in 0..(sb_size>>xdec) + pad*2 {
+          // FIXME for now, T == u16
+          out_row[x] = T::cast_from(CDEF_VERY_LARGE);
+        }
       } else {
         let in_slice = f.planes[p].slice(&PlaneOffset {x:0, y:offset.y + y - ipad});
         let in_row = in_slice.as_slice();
@@ -304,7 +310,8 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
             if offset.x + x >= ipad && offset.x + x < w + ipad {
               out_row[x as usize] = in_row[(offset.x + x - ipad) as usize]
             } else {
-              out_row[x as usize] = CDEF_VERY_LARGE;
+              // FIXME for now, T == u16
+              out_row[x as usize] = T::cast_from(CDEF_VERY_LARGE);
             }
           }
         } else {
