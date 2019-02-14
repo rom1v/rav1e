@@ -40,7 +40,7 @@ pub static RAV1E_INTRA_MODES: &'static [PredictionMode] = &[
   // PredictionMode::D63_PRED,
 ];
 
-// Intra prediction modes tested at high speed levels
+// T prediction modes tested at high speed levels
 #[rustfmt::skip]
 pub static RAV1E_INTRA_MODES_MINIMAL: &'static [PredictionMode] = &[
     PredictionMode::DC_PRED,
@@ -127,8 +127,7 @@ macro_rules! block_dimension {
         const H: usize = $H;
       }
 
-      impl Intra<u8> for [<Block $W x $H>] {}
-      impl Intra<u16> for [<Block $W x $H>] {}
+      impl<T: Pixel> Intra<T> for [<Block $W x $H>] {}
     }
   };
 }
