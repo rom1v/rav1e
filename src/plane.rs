@@ -9,6 +9,7 @@
 
 use std::iter::FusedIterator;
 use std::fmt::{Debug, Display, Formatter};
+use num_traits::*;
 
 use crate::util::*;
 
@@ -62,13 +63,13 @@ impl<T: Pixel> Plane<T> {
     width: usize, height: usize, xdec: usize, ydec: usize, xpad: usize,
     ypad: usize
   ) -> Self {
-    let xorigin = xpad.align_power_of_two(Plane::STRIDE_ALIGNMENT_LOG2 - 1);
+    let xorigin = xpad.align_power_of_two(Self::STRIDE_ALIGNMENT_LOG2 - 1);
     let yorigin = ypad;
     let stride = (xorigin + width + xpad)
-      .align_power_of_two(Plane::STRIDE_ALIGNMENT_LOG2 - 1);
+      .align_power_of_two(Self::STRIDE_ALIGNMENT_LOG2 - 1);
     let alloc_height = yorigin + height + ypad;
-    let data = vec![128.into(); stride * alloc_height];
-    assert!(is_aligned(data.as_ptr(), Plane::DATA_ALIGNMENT_LOG2));
+    let data = vec![T::cast_from(128); stride * alloc_height];
+    assert!(is_aligned(data.as_ptr(), Self::DATA_ALIGNMENT_LOG2));
     Plane {
       data,
       cfg: PlaneConfig {
@@ -178,13 +179,13 @@ impl<T: Pixel> Plane<T> {
       let dst = dst_slice.as_mut_slice();
 
       for col in 0..width {
-        let mut sum = 0;
-        sum += src.p(2 * col, 2 * row);
-        sum += src.p(2 * col + 1, 2 * row);
-        sum += src.p(2 * col, 2 * row + 1);
-        sum += src.p(2 * col + 1, 2 * row + 1);
+        let mut sum = 0u32;
+        sum += AsPrimitive::<u32>::as_(src.p(2 * col, 2 * row));
+        sum += AsPrimitive::<u32>::as_(src.p(2 * col + 1, 2 * row));
+        sum += AsPrimitive::<u32>::as_(src.p(2 * col, 2 * row + 1));
+        sum += AsPrimitive::<u32>::as_(src.p(2 * col + 1, 2 * row + 1));
         let avg = (sum + 2) >> 2;
-        dst[col] = avg;
+        dst[col] = T::cast_from(avg);
       }
     }
   }
@@ -411,7 +412,7 @@ impl<'a, T: Pixel> PlaneMutSlice<'a, T> {
 
   pub fn offset_as_mutable(
     &mut self, add_x: usize, add_y: usize
-  ) -> &mut [u16] {
+  ) -> &mut [T] {
     let new_y =
       (self.y + add_y as isize + self.plane.cfg.yorigin as isize) as usize;
     let new_x =
