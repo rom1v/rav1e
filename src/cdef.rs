@@ -54,15 +54,16 @@ fn first_max_element(elems: &[i32]) -> (usize, i32) {
 // in a particular direction. Since each direction have the same sum(x^2) term,
 // that term is never computed. See Section 2, step 2, of:
 // http://jmvalin.ca/notes/intra_paint.pdf
-fn cdef_find_dir(img: &[u16], stride: usize, var: &mut i32, coeff_shift: i32) -> i32 {
+fn cdef_find_dir<T: Pixel>(img: &[T], stride: usize, var: &mut i32, coeff_shift: usize) -> i32 {
   let mut cost: [i32; 8] = [0; 8];
   let mut partial: [[i32; 15]; 8] = [[0; 15]; 8];
   for i in 0..8 {
     for j in 0..8 {
+      let p: i32 = img[i * stride + j].as_();
       // We subtract 128 here to reduce the maximum range of the squared
       // partial sums.
-      debug_assert!((img[i * stride + j] >> coeff_shift) <= 255);
-      let x = (img[i * stride + j] as i32 >> coeff_shift) - 128;
+      debug_assert!(p >> coeff_shift <= 255);
+      let x = (p >> coeff_shift) - 128;
       partial[0][i + j] += x;
       partial[1][i + j / 2] += x;
       partial[2][i] += x;
@@ -125,11 +126,12 @@ fn constrain(diff: i32, threshold: i32, damping: i32) -> i32 {
 // Unlike the AOM code, our block addressing points to the UL corner
 // of the 2-pixel padding around the block, not the block itself.
 // The destination is unpadded.
-unsafe fn cdef_filter_block(dst: &mut [u16], dstride: isize, input: &[u16],
-                            istride: isize, pri_strength: i32, sec_strength: i32,
-                            dir: usize, pri_damping: i32, sec_damping: i32,
-                            xsize: isize, ysize: isize, coeff_shift: i32) {
-
+unsafe fn cdef_filter_block<T: Pixel>(
+  dst: &mut [T], dstride: isize, input: &[T],
+  istride: isize, pri_strength: i32, sec_strength: i32,
+  dir: usize, pri_damping: i32, sec_damping: i32,
+  xsize: isize, ysize: isize, coeff_shift: i32
+) {
   let cdef_pri_taps = [[4, 2], [3, 3]];
   let cdef_sec_taps = [[2, 1], [2, 1]];
   let pri_taps = cdef_pri_taps[((pri_strength >> coeff_shift) & 1) as usize];
@@ -213,7 +215,7 @@ pub fn cdef_analyze_superblock<T: Pixel>(
   sbo_global: &SuperBlockOffset,
   bit_depth: usize,
 ) -> CdefDirections {
-  let coeff_shift = bit_depth as i32 - 8;
+  let coeff_shift = bit_depth as usize - 8;
   let mut dir: CdefDirections = CdefDirections {dir: [[0; 8]; 8], var: [[0; 8]; 8]};
   // Each direction block is 8x8 in y, and direction computation only looks at y
   for by in 0..8 {
