@@ -1035,7 +1035,6 @@ impl PredictionMode {
       _ => self
     };
 
-    let slice = dst.as_mut_slice();
     let above_slice = &above[..B::W + B::H];
     let left_slice = &left[2 * MAX_TX_SIZE - B::H..];
     let left_and_left_below_slice = &left[2 * MAX_TX_SIZE - B::H - B::W..];

@@ -11,6 +11,7 @@
 
 use crate::context::{INTRA_MODES, MAX_TX_SIZE};
 use crate::partition::*;
+use crate::plane::*;
 use crate::util::*;
 
 #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
@@ -217,14 +218,14 @@ where
   T: Pixel,
 {
   #[cfg_attr(feature = "comparative_bench", inline(never))]
-  fn pred_dc(output: &mut [T], stride: usize, above: &[T], left: &[T]) {
+  fn pred_dc<'a>(output: &PlaneMutSlice<'a, T>, above: &[T], left: &[T]) {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
     {
       if size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
         return unsafe {
           rav1e_ipred_dc_avx2(
             output.as_mut_ptr() as *mut _,
-            stride as libc::ptrdiff_t,
+            output.plane.cfg.stride as libc::ptrdiff_t,
             above.as_ptr().offset(-1) as *const _,
             Self::W as libc::c_int,
             Self::H as libc::c_int,
@@ -238,22 +239,23 @@ where
     let avg = (edges.fold(0u32, |acc, &v| { let v: u32 = v.into(); v + acc }) + (len >> 1)) / len;
     let avg = T::cast_from(avg);
 
-    for line in output.chunks_mut(stride).take(Self::H) {
-      for v in &mut line[..Self::W] {
-        *v = avg;
+    for y in 0..Self::H {
+      let row = output.row_mut(0, y as isize);
+      for p in &mut row[..Self::W] {
+        *p = avg;
       }
     }
   }
 
   #[cfg_attr(feature = "comparative_bench", inline(never))]
-  fn pred_dc_128(output: &mut [T], stride: usize, bit_depth: usize) {
+  fn pred_dc_128<'a>(output: &PlaneMutSlice<'a, T>, bit_depth: usize) {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
     {
       if size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
         return unsafe {
           rav1e_ipred_dc_128_avx2(
             output.as_mut_ptr() as *mut _,
-            stride as libc::ptrdiff_t,
+            output.plane.cfg.stride as libc::ptrdiff_t,
             ptr::null(),
             Self::W as libc::c_int,
             Self::H as libc::c_int,
@@ -264,21 +266,22 @@ where
     }
     let v = T::cast_from(128u32 << (bit_depth - 8));
     for y in 0..Self::H {
-      for x in 0..Self::W {
-        output[y * stride + x] = v;
+      let row = output.row_mut(0, y as isize);
+      for p in &mut row[..Self::W] {
+        *p = v;
       }
     }
   }
 
   #[cfg_attr(feature = "comparative_bench", inline(never))]
-  fn pred_dc_left(output: &mut [T], stride: usize, _above: &[T], left: &[T]) {
+  fn pred_dc_left<'a>(output: &PlaneMutSlice<'a, T>, _above: &[T], left: &[T]) {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
     {
       if size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
         return unsafe {
           rav1e_ipred_dc_left_avx2(
             output.as_mut_ptr() as *mut _,
-            stride as libc::ptrdiff_t,
+            output.plane.cfg.stride as libc::ptrdiff_t,
             left.as_ptr().add(Self::H) as *const _,
             Self::W as libc::c_int,
             Self::H as libc::c_int,
@@ -289,20 +292,23 @@ where
     }
     let sum = left[..Self::H].iter().fold(0u32, |acc, &v| { let v: u32 = v.into(); v + acc });
     let avg = T::cast_from((sum + (Self::H >> 1) as u32) / Self::H as u32);
-    for line in output.chunks_mut(stride).take(Self::H) {
-      line[..Self::W].iter_mut().for_each(|v| *v = avg);
+    for y in 0..Self::H {
+      let row = output.row_mut(0, y as isize);
+      for p in &mut row[..Self::W] {
+        *p = avg;
+      }
     }
   }
 
   #[cfg_attr(feature = "comparative_bench", inline(never))]
-  fn pred_dc_top(output: &mut [T], stride: usize, above: &[T], _left: &[T]) {
+  fn pred_dc_top<'a>(output: &PlaneMutSlice<'a, T>, above: &[T], _left: &[T]) {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
     {
       if size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
         return unsafe {
           rav1e_ipred_dc_top_avx2(
             output.as_mut_ptr() as *mut _,
-            stride as libc::ptrdiff_t,
+            output.plane.cfg.stride as libc::ptrdiff_t,
             above.as_ptr().offset(-1) as *const _,
             Self::W as libc::c_int,
             Self::H as libc::c_int,
@@ -313,20 +319,23 @@ where
     }
     let sum = above[..Self::W].iter().fold(0u32, |acc, &v| { let v: u32 = v.into(); v + acc });
     let avg = T::cast_from((sum + (Self::W >> 1) as u32) / Self::W as u32);
-    for line in output.chunks_mut(stride).take(Self::H) {
-      line[..Self::W].iter_mut().for_each(|v| *v = avg);
+    for y in 0..Self::H {
+      let row = output.row_mut(0, y as isize);
+      for p in &mut row[..Self::W] {
+        *p = avg;
+      }
     }
   }
 
   #[cfg_attr(feature = "comparative_bench", inline(never))]
-  fn pred_h(output: &mut [T], stride: usize, left: &[T]) {
+  fn pred_h<'a>(output: &PlaneMutSlice<'a, T>, left: &[T]) {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
     {
       if size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
         return unsafe {
           rav1e_ipred_h_avx2(
             output.as_mut_ptr() as *mut _,
-            stride as libc::ptrdiff_t,
+            output.plane.cfg.stride as libc::ptrdiff_t,
             left.as_ptr().add(Self::H) as *const _,
             Self::W as libc::c_int,
             Self::H as libc::c_int,
@@ -335,24 +344,24 @@ where
         };
       }
     }
-    for (line, l) in
-      output.chunks_mut(stride).zip(left[..Self::H].iter().rev())
-    {
-      for v in &mut line[..Self::W] {
-        *v = *l;
+    for y in 0..Self::H {
+      let row = output.row_mut(0, y as isize);
+      let l = left[Self::H - y - 1];
+      for p in &mut row[..Self::W] {
+        *p = l;
       }
     }
   }
 
   #[cfg_attr(feature = "comparative_bench", inline(never))]
-  fn pred_v(output: &mut [T], stride: usize, above: &[T]) {
+  fn pred_v<'a>(output: &PlaneMutSlice<'a, T>, above: &[T]) {
     #[cfg(all(target_arch = "x86_64", not(windows), feature = "nasm"))]
     {
       if size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
         return unsafe {
           rav1e_ipred_v_avx2(
             output.as_mut_ptr() as *mut _,
-            stride as libc::ptrdiff_t,
+            output.plane.cfg.stride as libc::ptrdiff_t,
             above.as_ptr().offset(-1) as *const _,
             Self::W as libc::c_int,
             Self::H as libc::c_int,
@@ -361,8 +370,9 @@ where
         };
       }
     }
-    for line in output.chunks_mut(stride).take(Self::H) {
-      line[..Self::W].clone_from_slice(&above[..Self::W])
+    for y in 0..Self::H {
+      let row = output.row_mut(0, y as isize);
+      row[..Self::W].clone_from_slice(&above[..Self::W]);
     }
   }
 
