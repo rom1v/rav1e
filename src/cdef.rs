@@ -291,8 +291,8 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
     let w = f.planes[p].cfg.width as isize;
     let offset = sbo.plane_offset(&f.planes[p].cfg);
     for y in 0..((sb_size>>ydec) + pad*2) as isize {
-      let mut out_slice = out.planes[p].mut_slice(&PlaneOffset {x:0, y});
-      let out_row = out_slice.as_mut_slice();
+      let mut out_slice = out.planes[p].as_mut_slice();
+      let out_row = &mut out_slice[y as usize];
       if offset.y + y < ipad || offset.y+y >= h + ipad {
         // above or below the frame, fill with flag
         for x in 0..(sb_size>>xdec) + pad*2 {
@@ -448,27 +448,25 @@ pub fn cdef_filter_frame<T: Pixel>(fi: &FrameInvariants<T>, rec: &mut Frame<T>, 
   for p in 0..3 {
     let rec_w = rec.planes[p].cfg.width;
     let rec_h = rec.planes[p].cfg.height;
+    let mut cdef_slice = cdef_frame.planes[p].as_mut_slice();
     for row in 0..padded_px[p][1] {
       // pad first two elements of current row
       {
-        let mut cdef_slice = cdef_frame.planes[p].mut_slice(&PlaneOffset { x: 0, y: row as isize });
-        let cdef_row = &mut cdef_slice.as_mut_slice()[..2];
+        let cdef_row = &mut cdef_slice[row][..2];
         // FIXME this is just to make it compile, but it's incorrect if T == u8
         cdef_row[0] = T::cast_from(CDEF_VERY_LARGE);
         cdef_row[1] = T::cast_from(CDEF_VERY_LARGE);
       }
       // pad out end of current row
       {
-        let mut cdef_slice = cdef_frame.planes[p].mut_slice(&PlaneOffset { x: rec_w as isize + 2, y: row as isize });
-        let cdef_row = &mut cdef_slice.as_mut_slice()[..padded_px[p][0]-rec_w-2];
+        let cdef_row = &mut cdef_slice[row][rec_w + 2..padded_px[p][0]];
         for x in cdef_row {
           *x = T::cast_from(CDEF_VERY_LARGE);
         }
       }
       // copy current row from rec if we're in data, or pad if we're in first two rows/last N rows
       {
-        let mut cdef_slice = cdef_frame.planes[p].mut_slice(&PlaneOffset { x: 2, y: row as isize });
-        let cdef_row = &mut cdef_slice.as_mut_slice()[..rec_w];
+        let cdef_row = &mut cdef_slice[row][2..rec_w + 2];
         if row < 2 || row >= rec_h+2 {
           for x in cdef_row {
             *x = T::cast_from(CDEF_VERY_LARGE);
