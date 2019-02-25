@@ -316,7 +316,9 @@ impl<'a, T: Pixel> ExactSizeIterator for IterWidth<'a, T> { }
 impl<'a, T: Pixel> FusedIterator for IterWidth<'a, T> { }
 
 pub struct RowsIter<'a, T: Pixel> {
-  ps: &'a PlaneSlice<'a, T>,
+  plane: &'a Plane<T>,
+  x: isize,
+  y: isize,
   next_row: usize,
 }
 
@@ -324,20 +326,20 @@ impl<'a, T: Pixel> Iterator for RowsIter<'a, T> {
   type Item = &'a [T];
 
   fn next(&mut self) -> Option<Self::Item> {
-    let remaining = self.ps.plane.cfg.height as isize - self.ps.y + self.next_row as isize;
+    let remaining = self.plane.cfg.height as isize - self.y + self.next_row as isize;
     if remaining > 0 {
       let row = self.next_row;
       self.next_row += 1;
       // cannot directly return self.ps.row(row) due to lifetime issue
-      let range = PlaneSlice::slice_range(&self.ps.plane, self.ps.x, self.ps.y, row);
-      Some(&self.ps.plane.data[range])
+      let range = PlaneSlice::slice_range(&self.plane, self.x, self.y, row);
+      Some(&self.plane.data[range])
     } else {
       None
     }
   }
 
   fn size_hint(&self) -> (usize, Option<usize>) {
-    let remaining = self.ps.plane.cfg.height as isize - self.ps.y + self.next_row as isize;
+    let remaining = self.plane.cfg.height as isize - self.y + self.next_row as isize;
     assert!(remaining >= 0);
     let remaining = remaining as usize;
 
@@ -370,7 +372,9 @@ impl<'a, T: Pixel> PlaneSlice<'a, T> {
 
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
     RowsIter {
-      ps: self,
+      plane: self.plane,
+      x: self.x,
+      y: self.y,
       next_row: 0,
     }
   }
