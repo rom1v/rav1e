@@ -329,7 +329,7 @@ impl<'a, T: Pixel> Iterator for RowsIter<'a, T> {
       let row = self.next_row;
       self.next_row += 1;
       // cannot directly return self.ps.row(row) due to lifetime issue
-      let range = self.ps.slice_range(row);
+      let range = PlaneSlice::slice_range(&self.ps.plane, self.ps.x, self.ps.y, row);
       Some(&self.ps.plane.data[range])
     } else {
       None
@@ -350,17 +350,17 @@ impl<'a, T: Pixel> FusedIterator for RowsIter<'a, T> {}
 
 impl<'a, T: Pixel> PlaneSlice<'a, T> {
   #[inline]
-  fn slice_range(&self, y_offset: usize) -> Range<usize> {
-    assert!(self.plane.cfg.yorigin as isize + self.y + y_offset as isize >= 0);
-    let base_y = (self.plane.cfg.yorigin as isize + self.y + y_offset as isize) as usize;
-    let base_x = (self.plane.cfg.xorigin as isize + self.x) as usize;
-    let base = base_y * self.plane.cfg.stride + base_x;
-    let width = self.plane.cfg.stride - base_x;
+  fn slice_range(plane: &Plane<T>, x: isize, y: isize, y_offset: usize) -> Range<usize> {
+    assert!(plane.cfg.yorigin as isize + y + y_offset as isize >= 0);
+    let base_y = (plane.cfg.yorigin as isize + y + y_offset as isize) as usize;
+    let base_x = (plane.cfg.xorigin as isize + x) as usize;
+    let base = base_y * plane.cfg.stride + base_x;
+    let width = plane.cfg.stride - base_x;
     base..base + width
   }
 
   pub fn row(&self, y: usize) -> &[T] {
-    let range = self.slice_range(y);
+    let range = Self::slice_range(&self.plane, self.x, self.y, y);
     &self.plane.data[range]
   }
 
