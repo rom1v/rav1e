@@ -404,13 +404,13 @@ pub fn cdef_filter_superblock<T: Pixel>(
             unsafe {
               let xsize = 8 >> xdec;
               let ysize = 8 >> ydec;
-              let dst = out_slice.offset_as_mutable(8 * bx >> xdec, 8 * by >> ydec);
-              let input = in_slice.offset(8 * bx >> xdec, 8 * by >> ydec);
-              assert!(dst.len() >= (ysize - 1) * out_stride + xsize);
-              assert!(input.len() >= ((ysize + 3) * in_stride + xsize + 4) as usize);
-              cdef_filter_block(dst.as_mut_ptr(),
+              assert!(out_slice.rows_iter().len() >= (8 * by >> ydec) + ysize);
+              assert!(in_slice.rows_iter().len() >= (8 * by >> ydec) + ysize + 4);
+              let dst = out_slice[8 * by >> ydec][8 * bx >> xdec..].as_mut_ptr();
+              let input = in_slice[8 * by >> ydec][8 * bx >> xdec..].as_ptr();
+              cdef_filter_block(dst,
                                 out_stride as isize,
-                                input.as_ptr(),
+                                input,
                                 in_stride as isize,
                                 local_pri_strength, local_sec_strength, local_dir,
                                 local_damping, local_damping,
