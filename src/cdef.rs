@@ -55,12 +55,12 @@ fn first_max_element(elems: &[i32]) -> (usize, i32) {
 // in a particular direction. Since each direction have the same sum(x^2) term,
 // that term is never computed. See Section 2, step 2, of:
 // http://jmvalin.ca/notes/intra_paint.pdf
-fn cdef_find_dir<T: Pixel>(img: &[T], stride: usize, var: &mut i32, coeff_shift: usize) -> i32 {
+fn cdef_find_dir<'a, T: Pixel>(img: &PlaneSlice<'a, T>, var: &mut i32, coeff_shift: usize) -> i32 {
   let mut cost: [i32; 8] = [0; 8];
   let mut partial: [[i32; 15]; 8] = [[0; 15]; 8];
   for i in 0..8 {
     for j in 0..8 {
-      let p: i32 = img[i * stride + j].as_();
+      let p: i32 = img[i][j].as_();
       // We subtract 128 here to reduce the maximum range of the squared
       // partial sums.
       debug_assert!(p >> coeff_shift <= 255);
@@ -238,10 +238,10 @@ pub fn cdef_analyze_superblock<T: Pixel>(
           let mut var: i32 = 0;
           let in_plane = &mut in_frame.planes[0];
           let in_po = sbo.plane_offset(&in_plane.cfg);
-          let in_stride = in_plane.cfg.stride;
-          let in_slice = &in_plane.mut_slice(&in_po);
-          dir.dir[bx][by] = cdef_find_dir(in_slice.offset(8*bx+2,8*by+2),
-                                          in_stride, &mut var, coeff_shift) as u8;
+          let in_slice = in_plane.slice(&in_po);
+          dir.dir[bx][by] = cdef_find_dir(&in_slice.reslice(8 * bx as isize + 2,
+                                                            8 * by as isize + 2),
+                                          &mut var, coeff_shift) as u8;
           dir.var[bx][by] = var;
         }
       }
