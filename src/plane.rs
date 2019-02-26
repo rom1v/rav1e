@@ -548,24 +548,6 @@ impl<'a, T: Pixel> PlaneMutSlice<'a, T> {
     }
   }
 
-  pub fn offset(&self, add_x: usize, add_y: usize) -> &[T] {
-    let new_y =
-      (self.y + add_y as isize + self.plane.cfg.yorigin as isize) as usize;
-    let new_x =
-      (self.x + add_x as isize + self.plane.cfg.xorigin as isize) as usize;
-    &self.plane.data[new_y * self.plane.cfg.stride + new_x..]
-  }
-
-  pub fn offset_as_mutable(
-    &mut self, add_x: usize, add_y: usize
-  ) -> &mut [T] {
-    let new_y =
-      (self.y + add_y as isize + self.plane.cfg.yorigin as isize) as usize;
-    let new_x =
-      (self.x + add_x as isize + self.plane.cfg.xorigin as isize) as usize;
-    &mut self.plane.data[new_y * self.plane.cfg.stride + new_x..]
-  }
-
   // FIXME: code duplication with PlaneSlice
 
   /// A slice starting i pixels above the current one.
