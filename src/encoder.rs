@@ -2176,4 +2176,13 @@ mod test {
     assert_eq!(RAV1E_PARTITION_TYPES[RAV1E_PARTITION_TYPES.len() - 1],
                PartitionType::PARTITION_SPLIT);
   }
+
+  #[test]
+  fn test_planes_origin() {
+    let frame = Frame::<u8>::new(160, 144, ChromaSampling::Cs420);
+    assert_eq!(frame.planes[0].cfg.xorigin, 2 * frame.planes[1].cfg.xorigin);
+    assert_eq!(frame.planes[0].cfg.xorigin, 2 * frame.planes[2].cfg.xorigin);
+    assert_eq!(frame.planes[0].cfg.yorigin, 2 * frame.planes[1].cfg.yorigin);
+    assert_eq!(frame.planes[0].cfg.yorigin, 2 * frame.planes[2].cfg.yorigin);
+  }
 }
