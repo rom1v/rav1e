@@ -18,6 +18,7 @@ use crate::encoder::FrameInvariants;
 use crate::mc::*;
 use crate::plane::*;
 use crate::predict::*;
+use crate::tiling::*;
 use crate::util::*;
 
 pub const NONE_FRAME: usize = 8;
@@ -818,7 +819,7 @@ pub enum MvJointType {
 }
 
 pub fn get_intra_edges<T: Pixel>(
-  dst: &EdgedPlaneSlice<'_, T>,
+  dst: &EdgedPlaneRegion<'_, T>,
   tx_size: TxSize,
   bit_depth: usize,
   plane_cfg: &PlaneConfig,
@@ -838,8 +839,11 @@ pub fn get_intra_edges<T: Pixel>(
     let (top_left, above) = not_left.split_at_mut(1);
 
     let dst_content = dst.without_edges();
-    let x = dst_content.x as usize;
-    let y = dst_content.y as usize;
+    let &Rect { x, y, .. } = dst_content.rect();
+    debug_assert!(x >= 0);
+    debug_assert!(y >= 0);
+    let x = x as usize;
+    let y = y as usize;
 
     let mut needs_left = true;
     let mut needs_topleft = true;
@@ -874,10 +878,10 @@ pub fn get_intra_edges<T: Pixel>(
     if needs_left {
       if left_edge != 0 {
         for i in 0..tx_size.height() {
-          left[2*MAX_TX_SIZE - tx_size.height() + i] = dst.ps[top_edge + tx_size.height() - 1 - i][0];
+          left[2*MAX_TX_SIZE - tx_size.height() + i] = dst.region[top_edge + tx_size.height() - 1 - i][0];
         }
       } else {
-        let val = if top_edge != 0 { dst.ps[0][0] } else { T::cast_from(base + 1) };
+        let val = if top_edge != 0 { dst.region[0][0] } else { T::cast_from(base + 1) };
         for v in left[2*MAX_TX_SIZE - tx_size.height()..].iter_mut() {
           *v = val
         }
@@ -888,16 +892,16 @@ pub fn get_intra_edges<T: Pixel>(
     if needs_topleft {
       top_left[0] = match (left_edge, top_edge) {
         (0, 0) => T::cast_from(base),
-        _ => dst.ps[0][0],
+        _ => dst.region[0][0],
       };
     }
 
     // Needs top
     if needs_top {
       if top_edge != 0 {
-        above[..tx_size.width()].copy_from_slice(&dst.ps[0][left_edge..left_edge + tx_size.width()]);
+        above[..tx_size.width()].copy_from_slice(&dst.region[0][left_edge..left_edge + tx_size.width()]);
       } else {
-        let val = if left_edge != 0 { dst.ps[0][0] } else { T::cast_from(base - 1) };
+        let val = if left_edge != 0 { dst.region[0][0] } else { T::cast_from(base - 1) };
         for v in above[..tx_size.width()].iter_mut() {
           *v = val;
         }
@@ -925,7 +929,7 @@ pub fn get_intra_edges<T: Pixel>(
       };
       if num_avail > 0 {
         above[tx_size.width()..tx_size.width() + num_avail]
-        .copy_from_slice(&dst.ps[0][left_edge + tx_size.width()..left_edge + tx_size.width() + num_avail]);
+        .copy_from_slice(&dst.region[0][left_edge + tx_size.width()..left_edge + tx_size.width() + num_avail]);
       }
       if num_avail < tx_size.height() {
         let val = above[tx_size.width() + num_avail - 1];
@@ -956,7 +960,7 @@ pub fn get_intra_edges<T: Pixel>(
       };
       if num_avail > 0 {
         for i in 0..num_avail {
-          left[2*MAX_TX_SIZE - tx_size.height() - 1 - i] = dst.ps[top_edge + tx_size.height() + i][0];
+          left[2*MAX_TX_SIZE - tx_size.height() - 1 - i] = dst.region[top_edge + tx_size.height() + i][0];
         }
       }
       if num_avail < tx_size.width() {
@@ -976,7 +980,7 @@ pub fn get_intra_edges<T: Pixel>(
 
 impl PredictionMode {
   pub fn predict_intra<T: Pixel>(
-    self, dst: &mut PlaneMutSlice<'_, T>, tx_size: TxSize, bit_depth: usize,
+    self, dst: &mut PlaneRegionMut<'_, T>, tx_size: TxSize, bit_depth: usize,
     ac: &[i16], alpha: i16, edge_buf: &AlignedArray<[T; 4 * MAX_TX_SIZE + 1]>
   ) {
     assert!(self.is_intra());
@@ -1027,15 +1031,14 @@ impl PredictionMode {
 
   #[inline(always)]
   fn predict_intra_inner<B: Intra<T>, T: Pixel>(
-    self, dst: &mut PlaneMutSlice<'_, T>, bit_depth: usize, ac: &[i16],
+    self, dst: &mut PlaneRegionMut<'_, T>, bit_depth: usize, ac: &[i16],
     alpha: i16, edge_buf: &AlignedArray<[T; 4 * MAX_TX_SIZE + 1]>
   ) {
     // left pixels are order from bottom to top and right-aligned
     let (left, not_left) = edge_buf.array.split_at(2*MAX_TX_SIZE);
     let (top_left, above) = not_left.split_at(1);
 
-    let x = dst.x;
-    let y = dst.y;
+    let &Rect { x, y, .. } = dst.rect();
 
     let mode: PredictionMode = match self {
       PredictionMode::PAETH_PRED => match (x, y) {
@@ -1131,7 +1134,7 @@ impl PredictionMode {
 
   pub fn predict_inter<T: Pixel>(
     self, fi: &FrameInvariants<T>, p: usize, po: PlaneOffset,
-    dst: &mut PlaneMutSlice<'_, T>, width: usize, height: usize,
+    dst: &mut PlaneRegionMut<'_, T>, width: usize, height: usize,
     ref_frames: [usize; 2], mvs: [MotionVector; 2]
   ) {
     assert!(!self.is_intra());

@@ -42,10 +42,9 @@ fn bench_get_sad(b: &mut Bencher, bs: &BlockSize) {
   let bit_depth = 10;
   let input_plane = new_plane::<u16>(&mut ra, w, h);
   let rec_plane = new_plane::<u16>(&mut ra, w, h);
-  let po = PlaneOffset { x: 0, y: 0 };
 
-  let plane_org = input_plane.slice(po);
-  let plane_ref = rec_plane.slice(po);
+  let plane_org = input_plane.as_region();
+  let plane_ref = rec_plane.as_region();
 
   b.iter(|| {
     let _ =

@@ -971,7 +971,13 @@ fn write_obus<T: Pixel>(
 }
 
 /// Write into `dst` the difference between the blocks at `src1` and `src2`
-fn diff<T: Pixel>(dst: &mut [i16], src1: &PlaneSlice<'_, T>, src2: &PlaneSlice<'_, T>, width: usize, height: usize) {
+fn diff<T: Pixel>(
+  dst: &mut [i16],
+  src1: &PlaneRegion<'_, T>,
+  src2: &PlaneRegion<'_, T>,
+  width: usize,
+  height: usize,
+) {
   for ((l, s1), s2) in dst.chunks_mut(width).take(height)
     .zip(src1.rows_iter())
     .zip(src2.rows_iter()) {
@@ -981,11 +987,11 @@ fn diff<T: Pixel>(dst: &mut [i16], src1: &PlaneSlice<'_, T>, src2: &PlaneSlice<'
     }
 }
 
-fn get_qidx<T: Pixel>(fi: &FrameInvariants<T>, fs: &FrameState<T>, cw: &ContextWriter, bo: BlockOffset) -> u8 {
+fn get_qidx<T: Pixel>(fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, cw: &ContextWriter, bo: BlockOffset) -> u8 {
   let mut qidx = fi.base_q_idx;
   let sidx = cw.bc.blocks[bo].segmentation_idx as usize;
-  if fs.segmentation.features[sidx][SegLvl::SEG_LVL_ALT_Q as usize] {
-    let delta = fs.segmentation.data[sidx][SegLvl::SEG_LVL_ALT_Q as usize];
+  if ts.segmentation.features[sidx][SegLvl::SEG_LVL_ALT_Q as usize] {
+    let delta = ts.segmentation.data[sidx][SegLvl::SEG_LVL_ALT_Q as usize];
     qidx = clamp((qidx as i16) + delta, 0, 255) as u8;
   }
   qidx
@@ -995,27 +1001,28 @@ fn get_qidx<T: Pixel>(fi: &FrameInvariants<T>, fs: &FrameState<T>, cw: &ContextW
 // predict, transform, quantize, write coefficients to a bitstream,
 // dequantize, inverse-transform.
 pub fn encode_tx_block<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, cw: &mut ContextWriter,
   w: &mut dyn Writer, p: usize, bo: BlockOffset, mode: PredictionMode,
-  tx_size: TxSize, tx_type: TxType, plane_bsize: BlockSize, po: PlaneOffset,
+  tx_size: TxSize, tx_type: TxType, plane_bsize: BlockSize, _po: PlaneOffset,
   skip: bool, ac: &[i16], alpha: i16, rdo_type: RDOType, for_rdo_use: bool
 ) -> (bool, i64) {
-  let qidx = get_qidx(fi, fs, cw, bo);
-  let rec = &mut fs.rec.planes[p];
-  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[p].cfg;
+  let qidx = get_qidx(fi, ts, cw, bo);
+  let rec = &mut ts.rec.planes[p];
+  let PlaneConfig { xdec, ydec, .. } = ts.input.planes[p].cfg;
+  let area = Area::BlockStartingAt { bo };
 
   assert!(tx_size.sqr() <= TxSize::TX_32X32 || tx_type == TxType::DCT_DCT);
 
   if mode.is_intra() {
     let bit_depth = fi.sequence.bit_depth;
     let edge_buf = get_intra_edges(
-      &rec.edged_slice(po, 1, 1),
+      &rec.edged_subregion(area, 1, 1),
       tx_size,
       bit_depth,
-      &fs.input.planes[p].cfg,
+      &ts.input.planes[p].cfg,
       Some(mode),
     );
-    mode.predict_intra(&mut rec.mut_slice(po), tx_size, bit_depth, &ac, alpha, &edge_buf);
+    mode.predict_intra(&mut rec.subregion_mut(area), tx_size, bit_depth, &ac, alpha, &edge_buf);
   }
 
   if skip { return (false, -1); }
@@ -1029,16 +1036,17 @@ pub fn encode_tx_block<T: Pixel>(
   let qcoeffs = &mut qcoeffs_storage.array[..tx_size.area()];
   let rcoeffs = &mut rcoeffs_storage.array[..tx_size.area()];
 
-  diff(residual,
-       &fs.input.planes[p].slice(po),
-       &rec.slice(po),
-       tx_size.width(),
-       tx_size.height());
+  diff(
+    residual,
+    &ts.input_tile.planes[p].subregion(area),
+    &rec.subregion(area),
+    tx_size.width(),
+    tx_size.height());
 
   forward_transform(residual, coeffs, tx_size.width(), tx_size, tx_type, fi.sequence.bit_depth);
 
   let coded_tx_size = av1_get_coded_tx_size(tx_size).area();
-  fs.qc.quantize(coeffs, qcoeffs, coded_tx_size);
+  ts.qc.quantize(coeffs, qcoeffs, coded_tx_size);
 
   let tell_coeffs = w.tell_frac();
   let has_coeff = if !for_rdo_use || rdo_type.needs_coeff_rate() {
@@ -1054,7 +1062,7 @@ pub fn encode_tx_block<T: Pixel>(
   let mut tx_dist: i64 = -1;
 
   if !fi.use_tx_domain_distortion || !for_rdo_use {
-    inverse_transform_add(rcoeffs, &mut rec.mut_slice(po), tx_size, tx_type, fi.sequence.bit_depth);
+    inverse_transform_add(rcoeffs, &mut rec.subregion_mut(area), tx_size, tx_type, fi.sequence.bit_depth);
   }
   if rdo_type.needs_tx_dist() {
     // Store tx-domain distortion of this block
@@ -1071,7 +1079,7 @@ pub fn encode_tx_block<T: Pixel>(
     tx_dist = (tx_dist + tx_dist_scale_rounding_offset) >> tx_dist_scale_bits;
   }
   if fi.config.train_rdo {
-    fs.t.add_rate(fi.base_q_idx, tx_size, tx_dist as u64, cost_coeffs as u64);
+    ts.rdo.add_rate(fi.base_q_idx, tx_size, tx_dist as u64, cost_coeffs as u64);
   }
 
   if rdo_type == RDOType::TxDistEstRate {
@@ -1083,13 +1091,13 @@ pub fn encode_tx_block<T: Pixel>(
 }
 
 pub fn motion_compensate<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, cw: &mut ContextWriter,
   luma_mode: PredictionMode, ref_frames: [usize; 2], mvs: [MotionVector; 2],
   bsize: BlockSize, bo: BlockOffset, luma_only: bool
 ) {
   debug_assert!(!luma_mode.is_intra());
 
-  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+  let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
 
   // Inter mode prediction can take place once for a whole partition,
   // instead of each tx-block.
@@ -1099,9 +1107,10 @@ pub fn motion_compensate<T: Pixel>(
     let plane_bsize = if p == 0 { bsize }
     else { get_plane_block_size(bsize, xdec, ydec) };
 
-    let po = bo.plane_offset(&fs.input.planes[p].cfg);
-    let rec = &mut fs.rec.planes[p];
+    let po = bo.plane_offset(&ts.input.planes[p].cfg);
+    let rec = &mut ts.rec.planes[p];
 
+    let area = Area::BlockStartingAt { bo };
     if p > 0 && bsize < BlockSize::BLOCK_8X8 {
       let mut some_use_intra = false;
       if bsize == BlockSize::BLOCK_4X4 || bsize == BlockSize::BLOCK_4X8 {
@@ -1112,7 +1121,7 @@ pub fn motion_compensate<T: Pixel>(
         some_use_intra |= cw.bc.blocks[bo.with_offset(-1,-1)].mode.is_intra(); };
 
       if some_use_intra {
-        luma_mode.predict_inter(fi, p, po, &mut rec.mut_slice(po), plane_bsize.width(),
+        luma_mode.predict_inter(fi, p, po, &mut rec.subregion_mut(area), plane_bsize.width(),
                                 plane_bsize.height(), ref_frames, mvs);
       } else {
         assert!(xdec == 1 && ydec == 1);
@@ -1123,65 +1132,70 @@ pub fn motion_compensate<T: Pixel>(
           let mv1 = cw.bc.blocks[bo.with_offset(0,-1)].mv;
           let rf1 = cw.bc.blocks[bo.with_offset(0,-1)].ref_frames;
           let po1 = PlaneOffset { x: po.x+2, y: po.y };
+          let area1 = Area::StartingAt { x: po1.x, y: po1.y };
           let mv2 = cw.bc.blocks[bo.with_offset(-1,0)].mv;
           let rf2 = cw.bc.blocks[bo.with_offset(-1,0)].ref_frames;
           let po2 = PlaneOffset { x: po.x, y: po.y+2 };
+          let area2 = Area::StartingAt { x: po2.x, y: po2.y };
           let po3 = PlaneOffset { x: po.x+2, y: po.y+2 };
-          luma_mode.predict_inter(fi, p, po, &mut rec.mut_slice(po), 2, 2, rf0, mv0);
-          luma_mode.predict_inter(fi, p, po1, &mut rec.mut_slice(po1), 2, 2, rf1, mv1);
-          luma_mode.predict_inter(fi, p, po2, &mut rec.mut_slice(po2), 2, 2, rf2, mv2);
-          luma_mode.predict_inter(fi, p, po3, &mut rec.mut_slice(po3), 2, 2, ref_frames, mvs);
+          let area3 = Area::StartingAt { x: po3.x, y: po3.y };
+          luma_mode.predict_inter(fi, p, po, &mut rec.subregion_mut(area), 2, 2, rf0, mv0);
+          luma_mode.predict_inter(fi, p, po1, &mut rec.subregion_mut(area1), 2, 2, rf1, mv1);
+          luma_mode.predict_inter(fi, p, po2, &mut rec.subregion_mut(area2), 2, 2, rf2, mv2);
+          luma_mode.predict_inter(fi, p, po3, &mut rec.subregion_mut(area3), 2, 2, ref_frames, mvs);
         }
         if bsize == BlockSize::BLOCK_8X4 {
           let mv1 = cw.bc.blocks[bo.with_offset(0,-1)].mv;
           let rf1 = cw.bc.blocks[bo.with_offset(0,-1)].ref_frames;
-          luma_mode.predict_inter(fi, p, po, &mut rec.mut_slice(po), 4, 2, rf1, mv1);
+          luma_mode.predict_inter(fi, p, po, &mut rec.subregion_mut(area), 4, 2, rf1, mv1);
           let po3 = PlaneOffset { x: po.x, y: po.y+2 };
-          luma_mode.predict_inter(fi, p, po3, &mut rec.mut_slice(po3), 4, 2, ref_frames, mvs);
+          let area3 = Area::StartingAt { x: po3.x, y: po3.y };
+          luma_mode.predict_inter(fi, p, po3, &mut rec.subregion_mut(area3), 4, 2, ref_frames, mvs);
         }
         if bsize == BlockSize::BLOCK_4X8 {
           let mv2 = cw.bc.blocks[bo.with_offset(-1,0)].mv;
           let rf2 = cw.bc.blocks[bo.with_offset(-1,0)].ref_frames;
-          luma_mode.predict_inter(fi, p, po, &mut rec.mut_slice(po), 2, 4, rf2, mv2);
+          luma_mode.predict_inter(fi, p, po, &mut rec.subregion_mut(area), 2, 4, rf2, mv2);
           let po3 = PlaneOffset { x: po.x+2, y: po.y };
-          luma_mode.predict_inter(fi, p, po3, &mut rec.mut_slice(po3), 2, 4, ref_frames, mvs);
+          let area3 = Area::StartingAt { x: po3.x, y: po3.y };
+          luma_mode.predict_inter(fi, p, po3, &mut rec.subregion_mut(area3), 2, 4, ref_frames, mvs);
         }
       }
     } else {
-      luma_mode.predict_inter(fi, p, po, &mut rec.mut_slice(po), plane_bsize.width(),
+      luma_mode.predict_inter(fi, p, po, &mut rec.subregion_mut(area), plane_bsize.width(),
                               plane_bsize.height(), ref_frames, mvs);
     }
   }
 }
 
 pub fn save_block_motion<T: Pixel>(
-   fs: &mut FrameState<T>,
+   ts: &mut TileStateMut<'_, T>,
    w_in_b: usize, h_in_b: usize,
    bsize: BlockSize, bo: BlockOffset,
    ref_frame: usize, mv: MotionVector,
 ) {
-  let frame_mvs = &mut fs.frame_mvs[ref_frame];
+  let tile_mvs = &mut ts.mvs[ref_frame];
   let bo_x_end = (bo.x + bsize.width_mi()).min(w_in_b);
   let bo_y_end = (bo.y + bsize.height_mi()).min(h_in_b);
   for mi_y in bo.y..bo_y_end {
     for mi_x in bo.x..bo_x_end {
-      frame_mvs[mi_y][mi_x] = mv;
+      tile_mvs[mi_y][mi_x] = mv;
     }
   }
 }
 
 pub fn encode_block_a<T: Pixel>(
-  seq: &Sequence, fs: &FrameState<T>,
+  seq: &Sequence, ts: &TileStateMut<'_, T>,
   cw: &mut ContextWriter, w: &mut dyn Writer,
   bsize: BlockSize, bo: BlockOffset, skip: bool
 ) -> bool {
   cw.bc.blocks.set_skip(bo, bsize, skip);
-  if fs.segmentation.enabled && fs.segmentation.update_map && fs.segmentation.preskip {
-    cw.write_segmentation(w, bo, bsize, false, fs.segmentation.last_active_segid);
+  if ts.segmentation.enabled && ts.segmentation.update_map && ts.segmentation.preskip {
+    cw.write_segmentation(w, bo, bsize, false, ts.segmentation.last_active_segid);
   }
   cw.write_skip(w, bo, skip);
-  if fs.segmentation.enabled && fs.segmentation.update_map && !fs.segmentation.preskip {
-    cw.write_segmentation(w, bo, bsize, skip, fs.segmentation.last_active_segid);
+  if ts.segmentation.enabled && ts.segmentation.update_map && !ts.segmentation.preskip {
+    cw.write_segmentation(w, bo, bsize, skip, ts.segmentation.last_active_segid);
   }
   if !skip && seq.enable_cdef {
     cw.bc.cdef_coded = true;
@@ -1190,7 +1204,7 @@ pub fn encode_block_a<T: Pixel>(
 }
 
 pub fn encode_block_b<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w: &mut dyn Writer,
   luma_mode: PredictionMode, chroma_mode: PredictionMode,
   ref_frames: [usize; 2], mvs: [MotionVector; 2],
@@ -1206,7 +1220,7 @@ pub fn encode_block_b<T: Pixel>(
   } else {
     BlockSize::BLOCK_64X64
   };
-  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+  let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
   if skip {
     cw.bc.reset_skip_context(bo, bsize, xdec, ydec);
   }
@@ -1217,8 +1231,8 @@ pub fn encode_block_b<T: Pixel>(
   cw.bc.blocks.set_motion_vectors(bo, bsize, mvs);
 
   //write_q_deltas();
-  if cw.bc.code_deltas && fs.deblock.block_deltas_enabled && (bsize < sb_size || !skip) {
-    cw.write_block_deblock_deltas(w, bo, fs.deblock.block_delta_multi);
+  if cw.bc.code_deltas && ts.deblock.block_deltas_enabled && (bsize < sb_size || !skip) {
+    cw.write_block_deblock_deltas(w, bo, ts.deblock.block_delta_multi);
   }
   cw.bc.code_deltas = false;
 
@@ -1347,36 +1361,36 @@ pub fn encode_block_b<T: Pixel>(
   }
 
   if is_inter {
-    motion_compensate(fi, fs, cw, luma_mode, ref_frames, mvs, bsize, bo, false);
-    write_tx_tree(fi, fs, cw, w, luma_mode, bo, bsize, tx_size, tx_type, skip, false, rdo_type, for_rdo_use)
+    motion_compensate(fi, ts, cw, luma_mode, ref_frames, mvs, bsize, bo, false);
+    write_tx_tree(fi, ts, cw, w, luma_mode, bo, bsize, tx_size, tx_type, skip, false, rdo_type, for_rdo_use)
   } else {
-    write_tx_blocks(fi, fs, cw, w, luma_mode, chroma_mode, bo, bsize, tx_size, tx_type, skip, cfl, false, rdo_type, for_rdo_use)
+    write_tx_blocks(fi, ts, cw, w, luma_mode, chroma_mode, bo, bsize, tx_size, tx_type, skip, cfl, false, rdo_type, for_rdo_use)
   }
 }
 
 pub fn luma_ac<T: Pixel>(
-  ac: &mut [i16], fs: &mut FrameState<T>, bo: BlockOffset, bsize: BlockSize
+  ac: &mut [i16], ts: &mut TileStateMut<'_, T>, bo: BlockOffset, bsize: BlockSize
 ) {
-  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+  let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
   let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
-  let po = if bsize.is_sub8x8() {
+  let bo = if bsize.is_sub8x8() {
     let offset = bsize.sub8x8_offset();
-    bo.with_offset(offset.0, offset.1).plane_offset(&fs.input.planes[0].cfg)
+    bo.with_offset(offset.0, offset.1)
   } else {
-    bo.plane_offset(&fs.input.planes[0].cfg)
+    bo
   };
-  let rec = &fs.rec.planes[0];
-  let luma = &rec.slice(po);
+  let rec = &ts.rec.planes[0];
+  let luma = &rec.subregion(Area::BlockStartingAt { bo });
 
   let mut sum: i32 = 0;
   for sub_y in 0..plane_bsize.height() {
     for sub_x in 0..plane_bsize.width() {
       let y = sub_y << ydec;
       let x = sub_x << xdec;
-      let sample: i16 = (i16::cast_from(luma.p(x, y))
-                          + i16::cast_from(luma.p(x + 1, y))
-                          + i16::cast_from(luma.p(x, y + 1))
-                          + i16::cast_from(luma.p(x + 1, y + 1)))
+      let sample: i16 = (i16::cast_from(luma[y][x])
+                          + i16::cast_from(luma[y][x + 1])
+                          + i16::cast_from(luma[y + 1][x])
+                          + i16::cast_from(luma[y + 1][x + 1]))
                          << 1;
       ac[sub_y * plane_bsize.width() + sub_x] = sample;
       sum += sample as i32;
@@ -1392,7 +1406,7 @@ pub fn luma_ac<T: Pixel>(
 }
 
 pub fn write_tx_blocks<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w: &mut dyn Writer,
   luma_mode: PredictionMode, chroma_mode: PredictionMode, bo: BlockOffset,
   bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
@@ -1400,14 +1414,14 @@ pub fn write_tx_blocks<T: Pixel>(
 ) -> i64 {
   let bw = bsize.width_mi() / tx_size.width_mi();
   let bh = bsize.height_mi() / tx_size.height_mi();
-  let qidx = get_qidx(fi, fs, cw, bo);
+  let qidx = get_qidx(fi, ts, cw, bo);
 
-  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+  let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
   let mut ac: AlignedArray<[i16; 32 * 32]> = UninitializedAlignedArray();
   let mut tx_dist: i64 = 0;
   let do_chroma = has_chroma(bo, bsize, xdec, ydec);
 
-  fs.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
+  ts.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
 
   for by in 0..bh {
     for bx in 0..bw {
@@ -1416,10 +1430,10 @@ pub fn write_tx_blocks<T: Pixel>(
         y: bo.y + by * tx_size.height_mi()
       };
 
-      let po = tx_bo.plane_offset(&fs.input.planes[0].cfg);
+      let po = tx_bo.plane_offset(&ts.input.planes[0].cfg);
       let (_, dist) =
         encode_tx_block(
-          fi, fs, cw, w, 0, tx_bo, luma_mode, tx_size, tx_type, bsize, po,
+          fi, ts, cw, w, 0, tx_bo, luma_mode, tx_size, tx_type, bsize, po,
           skip, &ac.array, 0, rdo_type, for_rdo_use
         );
       assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
@@ -1445,7 +1459,7 @@ pub fn write_tx_blocks<T: Pixel>(
   let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
 
   if chroma_mode.is_cfl() {
-    luma_ac(&mut ac.array, fs, bo, bsize);
+    luma_ac(&mut ac.array, ts, bo, bsize);
   }
 
   if bw_uv > 0 && bh_uv > 0 {
@@ -1463,7 +1477,7 @@ pub fn write_tx_blocks<T: Pixel>(
     };
 
     for p in 1..3 {
-      fs.qc.update(fi.base_q_idx, uv_tx_size, true, fi.sequence.bit_depth, fi.dc_delta_q[p], fi.ac_delta_q[p]);
+      ts.qc.update(fi.base_q_idx, uv_tx_size, true, fi.sequence.bit_depth, fi.dc_delta_q[p], fi.ac_delta_q[p]);
       let alpha = cfl.alpha(p - 1);
       for by in 0..bh_uv {
         for bx in 0..bw_uv {
@@ -1475,11 +1489,11 @@ pub fn write_tx_blocks<T: Pixel>(
                 ((bh * tx_size.height_mi() == 1) as usize) * ydec
             };
 
-          let mut po = bo.plane_offset(&fs.input.planes[p].cfg);
+          let mut po = bo.plane_offset(&ts.input.planes[p].cfg);
           po.x += (bx * uv_tx_size.width()) as isize;
           po.y += (by * uv_tx_size.height()) as isize;
           let (_, dist) =
-            encode_tx_block(fi, fs, cw, w, p, tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
+            encode_tx_block(fi, ts, cw, w, p, tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
                             plane_bsize, po, skip, &ac.array, alpha, rdo_type, for_rdo_use);
           assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
           tx_dist += dist;
@@ -1494,24 +1508,24 @@ pub fn write_tx_blocks<T: Pixel>(
 // FIXME: For now, assume tx_mode is LARGEST_TX, so var-tx is not implemented yet,
 // which means only one tx block exist for a inter mode partition.
 pub fn write_tx_tree<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter, w: &mut dyn Writer,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, cw: &mut ContextWriter, w: &mut dyn Writer,
   luma_mode: PredictionMode, bo: BlockOffset,
   bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
   luma_only: bool, rdo_type: RDOType, for_rdo_use: bool
 ) -> i64 {
   let bw = bsize.width_mi() / tx_size.width_mi();
   let bh = bsize.height_mi() / tx_size.height_mi();
-  let qidx = get_qidx(fi, fs, cw, bo);
+  let qidx = get_qidx(fi, ts, cw, bo);
 
-  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+  let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
   let ac = &[0i16; 0];
   let mut tx_dist: i64 = 0;
 
-  fs.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
+  ts.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
 
-  let po = bo.plane_offset(&fs.input.planes[0].cfg);
+  let po = bo.plane_offset(&ts.input.planes[0].cfg);
   let (has_coeff, dist) = encode_tx_block(
-    fi, fs, cw, w, 0, bo, luma_mode, tx_size, tx_type, bsize, po, skip, ac, 0, rdo_type, for_rdo_use
+    fi, ts, cw, w, 0, bo, luma_mode, tx_size, tx_type, bsize, po, skip, ac, 0, rdo_type, for_rdo_use
   );
   assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
   tx_dist += dist;
@@ -1544,15 +1558,15 @@ pub fn write_tx_tree<T: Pixel>(
     let uv_tx_type = if has_coeff {tx_type} else {TxType::DCT_DCT}; // if inter mode, uv_tx_type == tx_type
 
     for p in 1..3 {
-      fs.qc.update(qidx, uv_tx_size, false, fi.sequence.bit_depth, fi.dc_delta_q[p], fi.ac_delta_q[p]);
+      ts.qc.update(qidx, uv_tx_size, false, fi.sequence.bit_depth, fi.dc_delta_q[p], fi.ac_delta_q[p]);
       let tx_bo = BlockOffset {
         x: bo.x  - ((bw * tx_size.width_mi() == 1) as usize),
         y: bo.y  - ((bh * tx_size.height_mi() == 1) as usize)
       };
 
-      let po = bo.plane_offset(&fs.input.planes[p].cfg);
+      let po = bo.plane_offset(&ts.input.planes[p].cfg);
       let (_, dist) =
-        encode_tx_block(fi, fs, cw, w, p, tx_bo, luma_mode, uv_tx_size, uv_tx_type,
+        encode_tx_block(fi, ts, cw, w, p, tx_bo, luma_mode, uv_tx_size, uv_tx_type,
                         plane_bsize, po, skip, ac, 0, rdo_type, for_rdo_use);
       assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
       tx_dist += dist;
@@ -1563,7 +1577,7 @@ pub fn write_tx_tree<T: Pixel>(
 }
 
 pub fn encode_block_with_modes<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
   bsize: BlockSize, bo: BlockOffset, mode_decision: &RDOPartitionOutput,
   rdo_type: RDOType
@@ -1578,21 +1592,21 @@ pub fn encode_block_with_modes<T: Pixel>(
   let (tx_size, tx_type) = (mode_decision.tx_size, mode_decision.tx_type);
 
   debug_assert!((tx_size, tx_type) ==
-                rdo_tx_size_type(fi, fs, cw, bsize, bo, mode_luma, ref_frames, mvs, skip));
+                rdo_tx_size_type(fi, ts, cw, bsize, bo, mode_luma, ref_frames, mvs, skip));
 
   let mut mv_stack = Vec::new();
   let is_compound = ref_frames[1] != NONE_FRAME;
   let mode_context = cw.find_mvrefs(bo, ref_frames, &mut mv_stack, bsize, fi, is_compound);
 
-  cdef_coded = encode_block_a(&fi.sequence, fs, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
+  cdef_coded = encode_block_a(&fi.sequence, ts, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
                               bsize, bo, skip);
-  encode_block_b(fi, fs, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
+  encode_block_b(fi, ts, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
                  mode_luma, mode_chroma, ref_frames, mvs, bsize, bo, skip, cfl,
                  tx_size, tx_type, mode_context, &mv_stack, rdo_type, false);
 }
 
 fn encode_partition_bottomup<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>, cw: &mut ContextWriter,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, cw: &mut ContextWriter,
   w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer, bsize: BlockSize,
   bo: BlockOffset, pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5],
   ref_rd_cost: f64
@@ -1646,12 +1660,12 @@ fn encode_partition_bottomup<T: Pixel>(
     };
     let spmvs = &pmvs[pmv_idx];
 
-    let mode_decision = rdo_mode_decision(fi, fs, cw, bsize, bo, spmvs);
+    let mode_decision = rdo_mode_decision(fi, ts, cw, bsize, bo, spmvs);
 
     if !mode_decision.pred_mode_luma.is_intra() {
       // Fill the saved motion structure
       save_block_motion(
-        fs, fi.w_in_b, fi.h_in_b, mode_decision.bsize, mode_decision.bo,
+        ts, fi.w_in_b, fi.h_in_b, mode_decision.bsize, mode_decision.bo,
         mode_decision.ref_frames[0] - LAST_FRAME, mode_decision.mvs[0]
       );
     }
@@ -1663,7 +1677,7 @@ fn encode_partition_bottomup<T: Pixel>(
     rdo_output.part_modes.push(mode_decision.clone());
 
     if !can_split {
-      encode_block_with_modes(fi, fs, cw, w_pre_cdef, w_post_cdef, bsize, bo,
+      encode_block_with_modes(fi, ts, cw, w_pre_cdef, w_post_cdef, bsize, bo,
                               &mode_decision, rdo_type);
     }
   }
@@ -1720,7 +1734,7 @@ fn encode_partition_bottomup<T: Pixel>(
       for offset in partitions {
         let child_rdo_output = encode_partition_bottomup(
           fi,
-          fs,
+          ts,
           cw,
           w_pre_cdef,
           w_post_cdef,
@@ -1779,13 +1793,13 @@ fn encode_partition_bottomup<T: Pixel>(
 
           if !mode.pred_mode_luma.is_intra() {
             save_block_motion(
-              fs, fi.w_in_b, fi.h_in_b, mode.bsize, mode.bo,
+              ts, fi.w_in_b, fi.h_in_b, mode.bsize, mode.bo,
               mode.ref_frames[0] - LAST_FRAME, mode.mvs[0]
             );
           }
 
           // FIXME: redundant block re-encode
-          encode_block_with_modes(fi, fs, cw, w_pre_cdef, w_post_cdef,
+          encode_block_with_modes(fi, ts, cw, w_pre_cdef, w_post_cdef,
                                   mode.bsize, mode.bo, &mode, rdo_type);
         }
       }
@@ -1808,7 +1822,7 @@ fn encode_partition_bottomup<T: Pixel>(
 }
 
 fn encode_partition_topdown<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &mut FrameState<T>,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
   bsize: BlockSize, bo: BlockOffset, block_output: &Option<RDOOutput>,
   pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5]
@@ -1860,7 +1874,7 @@ fn encode_partition_topdown<T: Pixel>(
       partition_types.push(PartitionType::PARTITION_NONE);
       partition_types.push(PartitionType::PARTITION_SPLIT);
     }
-    rdo_output = rdo_partition_decision(fi, fs, cw,
+  rdo_output = rdo_partition_decision(fi, ts, cw,
                                         w_pre_cdef, w_post_cdef, bsize, bo, &rdo_output, pmvs, &partition_types, rdo_type);
     partition = rdo_output.part_type;
   } else {
@@ -1892,7 +1906,7 @@ fn encode_partition_topdown<T: Pixel>(
         let spmvs = &pmvs[pmv_idx];
 
         // Make a prediction mode decision for blocks encoded with no rdo_partition_decision call (e.g. edges)
-        rdo_mode_decision(fi, fs, cw, bsize, bo, spmvs)
+        rdo_mode_decision(fi, ts, cw, bsize, bo, spmvs)
       };
 
       let mut mode_luma = part_decision.pred_mode_luma;
@@ -1908,7 +1922,7 @@ fn encode_partition_topdown<T: Pixel>(
       // because, with top-down partition RDO, the neighnoring contexts
       // of current partition can change, i.e. neighboring partitions can split down more.
       let (tx_size, tx_type) =
-        rdo_tx_size_type(fi, fs, cw, bsize, bo, mode_luma, ref_frames, mvs, skip);
+        rdo_tx_size_type(fi, ts, cw, bsize, bo, mode_luma, ref_frames, mvs, skip);
 
       let mut mv_stack = Vec::new();
       let is_compound = ref_frames[1] != NONE_FRAME;
@@ -1956,16 +1970,16 @@ fn encode_partition_topdown<T: Pixel>(
         }
 
         save_block_motion(
-          fs, fi.w_in_b, fi.h_in_b,
+          ts, fi.w_in_b, fi.h_in_b,
           part_decision.bsize, part_decision.bo,
           part_decision.ref_frames[0] - LAST_FRAME, part_decision.mvs[0]
         );
       }
 
       // FIXME: every final block that has gone through the RDO decision process is encoded twice
-      cdef_coded = encode_block_a(&fi.sequence, fs, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
+      cdef_coded = encode_block_a(&fi.sequence, ts, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
                                   bsize, bo, skip);
-      encode_block_b(fi, fs, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
+      encode_block_b(fi, ts, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
                      mode_luma, mode_chroma, ref_frames, mvs, bsize, bo, skip, cfl,
                      tx_size, tx_type, mode_context, &mv_stack, RDOType::PixelDistRealRate, false);
     },
@@ -1978,7 +1992,7 @@ fn encode_partition_topdown<T: Pixel>(
 
         for mode in rdo_output.part_modes {
           // Each block is subjected to a new splitting decision
-          encode_partition_topdown(fi, fs, cw, w_pre_cdef, w_post_cdef, subsize, mode.bo,
+          encode_partition_topdown(fi, ts, cw, w_pre_cdef, w_post_cdef, subsize, mode.bo,
                                    &Some(RDOOutput {
                                      rd_cost: mode.rd_cost,
                                      part_type: PartitionType::PARTITION_NONE,
@@ -1999,7 +2013,7 @@ fn encode_partition_topdown<T: Pixel>(
         partitions.iter().for_each(|&offset| {
           encode_partition_topdown(
             fi,
-            fs,
+            ts,
             cw,
             w_pre_cdef,
             w_post_cdef,
@@ -2057,8 +2071,9 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
   };
 
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
+  let mut ts = fs.as_tile_state_mut();
 
-  let mut data = encode_tile(fi, fs, &mut fc, &mut blocks);
+  let mut data = encode_tile(fi, &mut ts, &mut fc, &mut blocks);
 
   /* TODO: Don't apply if lossless */
   deblock_filter_optimize(fi, fs, &blocks);
@@ -2099,7 +2114,7 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
 
 fn encode_tile<T: Pixel>(
   fi: &FrameInvariants<T>,
-  fs: &mut FrameState<T>,
+  ts: &mut TileStateMut<'_, T>,
   fc: &mut CDFContext,
   blocks: &mut FrameBlocks,
 ) -> Vec<u8> {
@@ -2115,12 +2130,17 @@ fn encode_tile<T: Pixel>(
   // For now, restoration unit size is locked to superblock size.
   let mut cw = ContextWriter::new(fc, bc);
 
-  let frame_pmvs = build_coarse_pmvs(fi, &fs.as_tile_state_mut());
+  let tile_pmvs = build_coarse_pmvs(fi, ts);
+
+  let sb_shift = fi.sb_size_log2();
+  let tile_sb_width = ts.luma_rect.width.align_power_of_two_and_shift(sb_shift);
+  let tile_sb_height = ts.luma_rect.height.align_power_of_two_and_shift(sb_shift);
+
   // main loop
-  for sby in 0..fi.sb_height {
+  for sby in 0..tile_sb_height {
     cw.bc.reset_left_contexts();
 
-    for sbx in 0..fi.sb_width {
+    for sbx in 0..tile_sb_width {
       let mut w_pre_cdef = WriterRecorder::new();
       let mut w_post_cdef = WriterRecorder::new();
       let sbo = SuperBlockOffset { x: sbx, y: sby };
@@ -2133,25 +2153,25 @@ fn encode_tile<T: Pixel>(
       for i in 0..INTER_REFS_PER_FRAME {
         let r = fi.ref_frames[i] as usize;
         if pmvs[0][r].is_none() {
-          pmvs[0][r] = frame_pmvs[sby * fi.sb_width + sbx][r];
+          pmvs[0][r] = tile_pmvs[sby * tile_sb_width + sbx][r];
           if let Some(pmv) = pmvs[0][r] {
             let pmv_w = if sbx > 0 {
-              frame_pmvs[sby * fi.sb_width + sbx - 1][r]
+              tile_pmvs[sby * tile_sb_width + sbx - 1][r]
             } else {
               None
             };
-            let pmv_e = if sbx < fi.sb_width - 1 {
-              frame_pmvs[sby * fi.sb_width + sbx + 1][r]
+            let pmv_e = if sbx < tile_sb_width - 1 {
+              tile_pmvs[sby * tile_sb_width + sbx + 1][r]
             } else {
               None
             };
             let pmv_n = if sby > 0 {
-              frame_pmvs[sby * fi.sb_width + sbx - fi.sb_width][r]
+              tile_pmvs[sby * tile_sb_width + sbx - tile_sb_width][r]
             } else {
               None
             };
-            let pmv_s = if sby < fi.sb_height - 1 {
-              frame_pmvs[sby * fi.sb_width + sbx + fi.sb_width][r]
+            let pmv_s = if sby < tile_sb_height - 1 {
+              tile_pmvs[sby * tile_sb_width + sbx + tile_sb_width][r]
             } else {
               None
             };
@@ -2161,12 +2181,11 @@ fn encode_tile<T: Pixel>(
             let mut pmvs2 = None;
             let mut pmvs3 = None;
             let mut pmvs4 = None;
-            let ts = fs.as_tile_state_mut();
             rayon::scope(|s| {
               s.spawn(|_| {
                 pmvs1 = estimate_motion_ss2(
                   fi,
-                  &ts,
+                  ts,
                   BlockSize::BLOCK_32X32,
                   r,
                   sbo.block_offset(0, 0),
@@ -2177,7 +2196,7 @@ fn encode_tile<T: Pixel>(
               s.spawn(|_| {
                 pmvs2 = estimate_motion_ss2(
                   fi,
-                  &ts,
+                  ts,
                   BlockSize::BLOCK_32X32,
                   r,
                   sbo.block_offset(8, 0),
@@ -2188,7 +2207,7 @@ fn encode_tile<T: Pixel>(
               s.spawn(|_| {
                 pmvs3 = estimate_motion_ss2(
                   fi,
-                  &ts,
+                  ts,
                   BlockSize::BLOCK_32X32,
                   r,
                   sbo.block_offset(0, 8),
@@ -2199,7 +2218,7 @@ fn encode_tile<T: Pixel>(
               s.spawn(|_| {
                 pmvs4 = estimate_motion_ss2(
                   fi,
-                  &ts,
+                  ts,
                   BlockSize::BLOCK_32X32,
                   r,
                   sbo.block_offset(8, 8),
@@ -2215,16 +2234,16 @@ fn encode_tile<T: Pixel>(
             pmvs[4][r] = pmvs4;
 
             if let Some(mv1) = pmvs1 {
-              save_block_motion(fs, fi.w_in_b, fi.h_in_b, BlockSize::BLOCK_32X32, sbo.block_offset(0, 0), i, mv1);
+              save_block_motion(ts, tile_sb_width, tile_sb_height, BlockSize::BLOCK_32X32, sbo.block_offset(0, 0), i, mv1);
             }
             if let Some(mv2) = pmvs2 {
-              save_block_motion(fs, fi.w_in_b, fi.h_in_b, BlockSize::BLOCK_32X32, sbo.block_offset(8, 0), i, mv2);
+              save_block_motion(ts, tile_sb_width, tile_sb_height, BlockSize::BLOCK_32X32, sbo.block_offset(8, 0), i, mv2);
             }
             if let Some(mv3) = pmvs3 {
-              save_block_motion(fs, fi.w_in_b, fi.h_in_b, BlockSize::BLOCK_32X32, sbo.block_offset(0, 8), i, mv3);
+              save_block_motion(ts, tile_sb_width, tile_sb_height, BlockSize::BLOCK_32X32, sbo.block_offset(0, 8), i, mv3);
             }
             if let Some(mv4) = pmvs4 {
-              save_block_motion(fs, fi.w_in_b, fi.h_in_b, BlockSize::BLOCK_32X32, sbo.block_offset(8, 8), i, mv4);
+              save_block_motion(ts, tile_sb_width, tile_sb_height, BlockSize::BLOCK_32X32, sbo.block_offset(8, 8), i, mv4);
             }
           }
         }
@@ -2232,12 +2251,12 @@ fn encode_tile<T: Pixel>(
 
       // Encode SuperBlock
       if fi.config.speed_settings.encode_bottomup {
-        encode_partition_bottomup(fi, fs, &mut cw,
+        encode_partition_bottomup(fi, ts, &mut cw,
                                   &mut w_pre_cdef, &mut w_post_cdef,
                                   BlockSize::BLOCK_64X64, bo, &pmvs, std::f64::MAX);
       }
       else {
-        encode_partition_topdown(fi, fs, &mut cw,
+        encode_partition_topdown(fi, ts, &mut cw,
                                  &mut w_pre_cdef, &mut w_post_cdef,
                                  BlockSize::BLOCK_64X64, bo, &None, &pmvs);
       }
@@ -2245,11 +2264,11 @@ fn encode_tile<T: Pixel>(
       // CDEF has to be decided before loop restoration, but coded after.
       // loop restoration must be decided last but coded before anything else.
       if cw.bc.cdef_coded || fi.sequence.enable_restoration {
-        rdo_loop_decision(sbo, fi, fs, &mut cw, &mut w);
+        rdo_loop_decision(sbo, fi, ts, &mut cw, &mut w);
       }
 
       if fi.sequence.enable_restoration {
-        cw.write_lrf(&mut w, fi, &mut fs.restoration, sbo);
+        cw.write_lrf(&mut w, fi, &mut ts.restoration, sbo);
       }
 
       // Once loop restoration is coded, we can replay the initial block bits
