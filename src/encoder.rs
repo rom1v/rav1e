@@ -447,6 +447,22 @@ impl<T: Pixel> FrameState<T> {
     let PlaneConfig { width, height, .. } = self.rec.planes[0].cfg;
     TileStateMut::new(self, Rect { x: 0, y: 0, width, height })
   }
+
+  /// Return an iterator over `TileStateMut`
+  ///
+  /// # Arguments
+  ///
+  /// * `sb_size_log2` - The log2 size of a superblock (typically 6 or 7)
+  /// * `tile_width_in_sb` - The width of a tile, in number of superblocks
+  /// * `tile_height_in_sb` - The width of a tile, in number of superblocks
+  pub fn tile_state_iter_mut(
+    &mut self,
+    sb_size_log2: usize,
+    tile_width_in_sb: usize,
+    tile_height_in_sb: usize,
+  ) -> TileStateIterMut<'_, T> {
+    TileStateIterMut::from_frame_state(self, sb_size_log2, tile_width_in_sb, tile_height_in_sb)
+  }
 }
 
 #[derive(Copy, Clone, Debug)]
