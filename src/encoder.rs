@@ -444,6 +444,12 @@ impl<T: Pixel> FrameState<T> {
       t: RDOTracker::new()
     }
   }
+
+  #[inline]
+  pub fn as_tile_state_mut(&mut self) -> TileStateMut<'_, T> {
+    let PlaneConfig { width, height, .. } = self.rec.planes[0].cfg;
+    TileStateMut::new(self, Rect { x: 0, y: 0, width, height })
+  }
 }
 
 #[derive(Copy, Clone, Debug)]
