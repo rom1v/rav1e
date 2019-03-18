@@ -1304,7 +1304,7 @@ pub fn rdo_loop_decision<T: Pixel>(sbo: SuperBlockOffset, fi: &FrameInvariants<T
   if fi.sequence.enable_restoration {
     for pli in 0..PLANES {
       let ru = fs.restoration.planes[pli].restoration_unit(sbo);
-      if !ru.coded {
+      if !ru.lock().unwrap().coded {
         lrf_any_uncoded = true;
         break;
       }
@@ -1388,7 +1388,7 @@ pub fn rdo_loop_decision<T: Pixel>(sbo: SuperBlockOffset, fi: &FrameInvariants<T
       // SgrProj LRF decision
       for pli in 0..3 {
         let ru = fs.restoration.planes[pli].restoration_unit(sbo);
-        if !ru.coded {
+        if !ru.lock().unwrap().coded {
           for set in 0..16 {
             let in_plane = &fs.input.planes[pli];  // reference
             let ipo = sbo.plane_offset(&in_plane.cfg);
@@ -1441,7 +1441,8 @@ pub fn rdo_loop_decision<T: Pixel>(sbo: SuperBlockOffset, fi: &FrameInvariants<T
 
   if fi.sequence.enable_restoration {
     for pli in 0..PLANES {
-      let ru = fs.restoration.planes[pli].restoration_unit_as_mut(sbo);
+      let ru = fs.restoration.planes[pli].restoration_unit(sbo);
+      let mut ru = ru.lock().unwrap();
       if !ru.coded {
         ru.filter = best_lrf[pli];
       }
