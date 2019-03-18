@@ -3208,13 +3208,15 @@ impl<'a, 'b> ContextWriter<'a, 'b> {
       for pli in 0..PLANES {
         let code;
         let rp = &mut rs.planes[pli];
-        {
-          let ru = &mut rp.restoration_unit_as_mut(sbo);
+        let filter = {
+          let ru = rp.restoration_unit(sbo);
+          let mut ru = ru.lock().unwrap();
           code = !ru.coded;
           ru.coded = true;
-        }
+          ru.filter
+        };
         if code {
-          match rp.restoration_unit_as_mut(sbo).filter {
+          match filter {
             RestorationFilter::None => {
               match rp.lrf_type {
                 RESTORE_WIENER => {
