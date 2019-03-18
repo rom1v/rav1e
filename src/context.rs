@@ -3172,7 +3172,7 @@ impl<'a> ContextWriter<'a> {
   }
 
   // rather than test writing and rolling back the cdf, we just count Q8 bits using the current cdf
-  pub fn count_lrf_switchable(&mut self, w: &dyn Writer, rs: &RestorationState,
+  pub fn count_lrf_switchable(&mut self, w: &dyn Writer, rs: &TileRestorationState,
                               filter: RestorationFilter, pli: usize) -> u32 {
     let nsym = &self.fc.lrf_switchable_cdf.len()-1;
     match filter {
@@ -3202,14 +3202,14 @@ impl<'a> ContextWriter<'a> {
   }
 
   pub fn write_lrf<T: Pixel>(
-    &mut self, w: &mut dyn Writer, fi: &FrameInvariants<T>, rs: &mut RestorationState, sbo: SuperBlockOffset
+    &mut self, w: &mut dyn Writer, fi: &FrameInvariants<T>, rs: &mut TileRestorationState, sbo: SuperBlockOffset
   ) {
     if !fi.allow_intrabc { // TODO: also disallow if lossless
       for pli in 0..PLANES {
         let code;
-        let rp = &mut rs.planes[pli];
+        let trp = &mut rs.planes[pli];
         let filter = {
-          let ru = rp.restoration_unit(sbo);
+          let ru = trp.rp.restoration_unit(sbo);
           let mut ru = ru.lock().unwrap();
           code = !ru.coded;
           ru.coded = true;
@@ -3218,7 +3218,7 @@ impl<'a> ContextWriter<'a> {
         if code {
           match filter {
             RestorationFilter::None => {
-              match rp.lrf_type {
+              match trp.rp.lrf_type {
                 RESTORE_WIENER => {
                   symbol_with_update!(self, w, 0, &mut self.fc.lrf_wiener_cdf);
                 }
@@ -3233,7 +3233,7 @@ impl<'a> ContextWriter<'a> {
               }
             }
             RestorationFilter::Sgrproj{set, xqd} => {
-              match rp.lrf_type {
+              match trp.rp.lrf_type {
                 RESTORE_SGRPROJ => {
                   symbol_with_update!(self, w, 1, &mut self.fc.lrf_sgrproj_cdf);
                 }
@@ -3250,21 +3250,21 @@ impl<'a> ContextWriter<'a> {
                 let max = SGRPROJ_XQD_MAX[i] as i32;
                 if s > 0 {
                   w.write_signed_subexp_with_ref(xqd[i] as i32, min, max+1, SGRPROJ_PRJ_SUBEXP_K,
-                                                 rp.sgrproj_ref[i] as i32);
-                  rp.sgrproj_ref[i] = xqd[i];
+                                                 trp.sgrproj_ref[i] as i32);
+                  trp.sgrproj_ref[i] = xqd[i];
                 } else {
                   // Nothing written, just update the reference
                   if i==0 {
                     assert!(xqd[i] == 0);
-                    rp.sgrproj_ref[0] = 0;
+                    trp.sgrproj_ref[0] = 0;
                   } else {
-                    rp.sgrproj_ref[1] = 95; // LOL at spec.  The result is always 95.
+                    trp.sgrproj_ref[1] = 95; // LOL at spec.  The result is always 95.
                   }
                 }
               }
             }
             RestorationFilter::Wiener{coeffs} => {
-              match rp.lrf_type {
+              match trp.rp.lrf_type {
                 RESTORE_WIENER => {
                   symbol_with_update!(self, w, 1, &mut self.fc.lrf_wiener_cdf);
                 }
@@ -3286,8 +3286,8 @@ impl<'a> ContextWriter<'a> {
                   let min = WIENER_TAPS_MIN[i] as i32;
                   let max = WIENER_TAPS_MAX[i] as i32;
                   w.write_signed_subexp_with_ref(coeffs[pass][i] as i32, min, max+1, (i+1) as u8,
-                                                 rp.wiener_ref[pass][i] as i32);
-                  rp.wiener_ref[pass][i] = coeffs[pass][i];
+                                                 trp.wiener_ref[pass][i] as i32);
+                  trp.wiener_ref[pass][i] = coeffs[pass][i];
                 }
               }
             }
