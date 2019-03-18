@@ -14,6 +14,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 
+use crate::tiling::*;
 use crate::util::*;
 
 /// Plane-specific configuration.
@@ -275,6 +276,28 @@ impl<T: Pixel> Plane<T> {
       y: po.y - top_edge as isize,
     };
     EdgedPlaneSlice { ps: self.slice(edged_po), left_edge, top_edge }
+  }
+
+  #[inline]
+  pub fn region(&self, area: Area) -> PlaneRegion<'_, T> {
+    let rect = area.to_rect(
+      self.cfg.xdec,
+      self.cfg.ydec,
+      self.cfg.stride - self.cfg.xorigin as usize,
+      self.cfg.alloc_height - self.cfg.yorigin as usize,
+    );
+    PlaneRegion::new(self, rect)
+  }
+
+  #[inline]
+  pub fn region_mut(&mut self, area: Area) -> PlaneRegionMut<'_, T> {
+    let rect = area.to_rect(
+      self.cfg.xdec,
+      self.cfg.ydec,
+      self.cfg.stride - self.cfg.xorigin as usize,
+      self.cfg.alloc_height - self.cfg.yorigin as usize,
+    );
+    PlaneRegionMut::new(self, rect)
   }
 
   #[inline]
