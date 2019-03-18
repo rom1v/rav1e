@@ -9,6 +9,8 @@
 
 #![allow(safe_extern_statics)]
 
+use std::sync::Mutex;
+
 use crate::encoder::Frame;
 use crate::encoder::FrameInvariants;
 use crate::context::SuperBlockOffset;
@@ -790,7 +792,7 @@ impl RestorationUnit {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RestorationPlane {
   pub lrf_type: u8,
   pub unit_size: usize,
@@ -804,7 +806,7 @@ pub struct RestorationPlane {
   pub rows: usize,
   pub wiener_ref: [[i8; 3]; 2],
   pub sgrproj_ref: [i8; 2],
-  pub units: Box<[RestorationUnit]>,
+  pub units: Box<[Mutex<RestorationUnit>]>,
 }
 
 #[derive(Clone, Default)]
@@ -826,7 +828,13 @@ impl RestorationPlane {
       rows,
       wiener_ref: [WIENER_TAPS_MID; 2],
       sgrproj_ref: SGRPROJ_XQD_MID,
-      units: vec![RestorationUnit::default(); cols * rows].into_boxed_slice(),
+      units: {
+        let mut vec = Vec::with_capacity(rows * cols);
+        for _ in 0..rows * cols {
+          vec.push(Mutex::new(RestorationUnit::default()));
+        }
+        vec.into_boxed_slice()
+      }
     }
   }
 
@@ -847,23 +855,18 @@ impl RestorationPlane {
     )
   }
 
-  pub fn restoration_unit(&self, sbo: SuperBlockOffset) -> &RestorationUnit {
+  pub fn restoration_unit(&self, sbo: SuperBlockOffset) -> &Mutex<RestorationUnit> {
     let (x, y) = self.restoration_unit_index(sbo);
     &self.units[y * self.cols + x]
   }
 
-  pub fn restoration_unit_as_mut(&mut self, sbo: SuperBlockOffset) -> &mut RestorationUnit {
-    let (x, y) = self.restoration_unit_index(sbo);
-    &mut self.units[y * self.cols + x]
-  }
-
-  pub fn restoration_unit_by_stripe(&self, stripenum: usize, rux: usize) -> &RestorationUnit {
+  pub fn restoration_unit_by_stripe(&self, stripenum: usize, rux: usize) -> &Mutex<RestorationUnit> {
     let (x, y) = self.restoration_unit_index_by_stripe(stripenum, rux);
     &self.units[y * self.cols + x]
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RestorationState {
   pub planes: [RestorationPlane; PLANES]
 }
@@ -902,12 +905,8 @@ impl RestorationState {
     }
   }
 
-  pub fn restoration_unit(&self, sbo: SuperBlockOffset, pli: usize) -> &RestorationUnit {
+  pub fn restoration_unit(&self, sbo: SuperBlockOffset, pli: usize) -> &Mutex<RestorationUnit> {
     self.planes[pli].restoration_unit(sbo)
-  }
-
-  pub fn restoration_unit_as_mut(&mut self, sbo: SuperBlockOffset, pli: usize) -> &mut RestorationUnit {
-    self.planes[pli].restoration_unit_as_mut(sbo)
   }
 
   pub fn lrf_filter_frame<T: Pixel>(&mut self, out: &mut Frame<T>, pre_cdef: &Frame<T>,
@@ -943,8 +942,12 @@ impl RestorationState {
           } else {
             rp.unit_size
           };
-          let ru = rp.restoration_unit_by_stripe(si, rux);
-          match ru.filter {
+          let filter = {
+            let ru = rp.restoration_unit_by_stripe(si, rux);
+            let ru = ru.lock().unwrap();
+            ru.filter
+          };
+          match filter {
             RestorationFilter::Wiener{coeffs} => {
               wiener_stripe_filter(coeffs, fi,
                                    crop_w, crop_h,
