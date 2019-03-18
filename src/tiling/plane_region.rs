@@ -209,6 +209,49 @@ macro_rules! plane_region_common {
           phantom: PhantomData,
         }
       }
+
+      /// Return a subregion including some left and top edges
+      ///
+      /// The area must be included in (i.e. must not exceed) this region.
+      ///
+      /// The number of pixels in the edges will be adjusted to fit this
+      /// region. For example, it is safe to request `3` pixels in `top_left`
+      /// even if the `area` starts at `x == 1`: `top_left` will be adjusted to
+      /// `1` in the resulting edged region. The purpose is to avoid each
+      /// caller to handle corner cases.
+      ///
+      /// # Arguments
+      ///
+      /// * `area` - The content area, excluding the edges
+      /// * `left_edge` - The number of pixels to include on the left
+      /// * `top_edge` - The number of pixels to include on the right
+      pub fn edged_subregion(
+        &self,
+        area: Area,
+        left_edge: usize,
+        top_edge: usize,
+      ) -> EdgedPlaneRegion<'_, T> {
+        let rect = area.to_rect(
+          self.plane_cfg.xdec,
+          self.plane_cfg.ydec,
+          self.rect.width,
+          self.rect.height,
+        );
+        assert!(rect.x >= 0 && rect.x as usize <= self.rect.width);
+        assert!(rect.y >= 0 && rect.y as usize <= self.rect.height);
+        let left_edge = left_edge.min(rect.x as usize);
+        let top_edge = top_edge.min(rect.y as usize);
+        EdgedPlaneRegion {
+          region: self.subregion(Area::Rect {
+            x: rect.x - left_edge as isize,
+            y: rect.y - top_edge as isize,
+            width: rect.width + left_edge,
+            height: rect.height + top_edge,
+          }),
+          left_edge,
+          top_edge,
+        }
+      }
     }
 
     unsafe impl<T: Pixel> Send for $name<'_, T> {}
@@ -380,3 +423,23 @@ impl<'a, T: Pixel> Iterator for RowsIterMut<'a, T> {
 
 impl<T: Pixel> ExactSizeIterator for RowsIter<'_, T> {}
 impl<T: Pixel> ExactSizeIterator for RowsIterMut<'_, T> {}
+
+/// PlaneRegion including left and top edges
+///
+/// The `region` fields contains both the content and the edges.
+///
+/// The "main" subregion can be retrieved via the `without_edges()` method.
+pub struct EdgedPlaneRegion<'a, T: Pixel> {
+  pub region: PlaneRegion<'a, T>,
+  pub left_edge: usize,
+  pub top_edge: usize,
+}
+
+impl<T: Pixel> EdgedPlaneRegion<'_, T> {
+  pub fn without_edges(&self) -> PlaneRegion<'_, T> {
+    self.region.subregion(Area::StartingAt {
+      x: self.left_edge as isize,
+      y: self.top_edge as isize,
+    })
+  }
+}
