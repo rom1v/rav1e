@@ -18,6 +18,7 @@ use crate::FrameState;
 use crate::partition::*;
 use crate::partition::RefType::*;
 use crate::plane::*;
+use crate::tiling::*;
 use crate::util::Pixel;
 
 use std::ops::{Index, IndexMut};
@@ -231,6 +232,16 @@ impl FrameMotionVectors {
       cols,
       rows,
     }
+  }
+
+  #[inline]
+  pub fn as_tile_motion_vectors(&self) -> TileMotionVectors<'_> {
+    TileMotionVectors::new(self, 0, 0, self.cols, self.rows)
+  }
+
+  #[inline]
+  pub fn as_tile_motion_vectors_mut(&mut self) -> TileMotionVectorsMut<'_> {
+    TileMotionVectorsMut::new(self, 0, 0, self.cols, self.rows)
   }
 }
 
