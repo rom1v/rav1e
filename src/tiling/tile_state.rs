@@ -12,10 +12,15 @@ use super::*;
 use crate::context::*;
 use crate::encoder::*;
 use crate::lrf::*;
+use crate::me::*;
+use crate::partition::*;
 use crate::plane::*;
 use crate::quantize::*;
 use crate::rdo::*;
 use crate::util::*;
+
+use std::ops::{Index, IndexMut};
+use std::slice;
 
 #[derive(Debug, Clone)]
 pub struct TileRestorationPlane<'a> {
@@ -52,6 +57,127 @@ impl<'a> TileRestorationState<'a> {
         TileRestorationPlane::new(&rs.planes[1]),
         TileRestorationPlane::new(&rs.planes[2]),
       ],
+    }
+  }
+}
+
+/// Tiled view of FrameMotionVectors
+#[derive(Debug)]
+pub struct TileMotionVectors<'a> {
+  data: *const MotionVector,
+  // expressed in mi blocks
+  x: usize,
+  y: usize,
+  cols: usize,
+  rows: usize,
+  stride: usize, // number of cols in the underlying FrameMotionVectors
+  phantom: PhantomData<&'a MotionVector>,
+}
+
+/// Mutable tiled view of FrameMotionVectors
+#[derive(Debug)]
+pub struct TileMotionVectorsMut<'a> {
+  data: *mut MotionVector,
+  // expressed in mi blocks
+  // cannot make these fields public, because they must not be written to,
+  // otherwise we could break borrowing rules in safe code
+  x: usize,
+  y: usize,
+  cols: usize,
+  rows: usize,
+  stride: usize, // number of cols in the underlying FrameMotionVectors
+  phantom: PhantomData<&'a mut MotionVector>,
+}
+
+// common impl for TileMotionVectors and TileMotionVectorsMut
+macro_rules! tile_motion_vectors_common {
+  // $name: TileMotionVectors or TileMotionVectorsMut
+  // $fmvs_ref_type: &'a FrameMotionVectors or &'a mut FrameMotionVectors
+  // $index: index or index_mut
+  ($name: ident, $fmv_ref_type: ty, $index: ident) => {
+    impl<'a> $name<'a> {
+
+      pub fn new(
+        frame_mvs: $fmv_ref_type,
+        x: usize,
+        y: usize,
+        cols: usize,
+        rows: usize,
+      ) -> Self {
+        Self {
+          data: frame_mvs.$index(y).$index(x), // &(mut) frame_mvs[y][x],
+          x,
+          y,
+          cols,
+          rows,
+          stride: frame_mvs.cols,
+          phantom: PhantomData,
+        }
+      }
+
+      #[inline(always)]
+      pub fn x(&self) -> usize {
+        self.x
+      }
+
+      #[inline(always)]
+      pub fn y(&self) -> usize {
+        self.y
+      }
+
+      #[inline(always)]
+      pub fn cols(&self) -> usize {
+        self.cols
+      }
+
+      #[inline(always)]
+      pub fn rows(&self) -> usize {
+        self.rows
+      }
+    }
+
+    unsafe impl Send for $name<'_> {}
+    unsafe impl Sync for $name<'_> {}
+
+    impl Index<usize> for $name<'_> {
+      type Output = [MotionVector];
+      #[inline]
+      fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.rows);
+        unsafe {
+          let ptr = self.data.add(index * self.stride);
+          slice::from_raw_parts(ptr, self.cols)
+        }
+      }
+    }
+  }
+}
+
+tile_motion_vectors_common!(TileMotionVectors, &'a FrameMotionVectors, index);
+tile_motion_vectors_common!(TileMotionVectorsMut, &'a mut FrameMotionVectors, index_mut);
+
+impl TileMotionVectorsMut<'_> {
+  #[inline]
+  pub fn as_const(&self) -> TileMotionVectors<'_> {
+    TileMotionVectors {
+      data: self.data,
+      x: self.x,
+      y: self.y,
+      cols: self.cols,
+      rows: self.rows,
+      stride: self.stride,
+      phantom: PhantomData,
+    }
+  }
+}
+
+impl IndexMut<usize> for TileMotionVectorsMut<'_> {
+  #[inline]
+  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    assert!(index < self.rows);
+    unsafe {
+      let ptr = self.data.add(index * self.stride);
+      slice::from_raw_parts_mut(ptr, self.cols)
     }
   }
 }
@@ -104,6 +230,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub cdfs: CDFContext,
   pub segmentation: &'a SegmentationState,
   pub restoration: TileRestorationState<'a>,
+  pub mvs: Vec<TileMotionVectorsMut<'a>>,
   pub rdo: RDOTracker,
 }
 
@@ -112,6 +239,10 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
     fs: &'a mut FrameState<T>,
     luma_rect: Rect,
   ) -> Self {
+    assert!(luma_rect.x >= 0);
+    assert!(luma_rect.y >= 0);
+    assert!(luma_rect.width & (MI_SIZE - 1) == 0, "luma_rect must be a multiple of MI_SIZE");
+    assert!(luma_rect.height & (MI_SIZE - 1) == 0, "luma_rect must be a multiple of MI_SIZE");
     Self {
       input: &fs.input,
       input_tile: Tile::new(&fs.input, luma_rect),
@@ -124,6 +255,15 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       cdfs: CDFContext::new(0),
       segmentation: &fs.segmentation,
       restoration: TileRestorationState::new(&fs.restoration),
+      mvs: fs.frame_mvs.iter_mut().map(|fmvs| {
+        TileMotionVectorsMut::new(
+          fmvs,
+          luma_rect.x as usize >> MI_SIZE_LOG2,
+          luma_rect.y as usize >> MI_SIZE_LOG2,
+          luma_rect.width >> MI_SIZE_LOG2,
+          luma_rect.height >> MI_SIZE_LOG2,
+        )
+      }).collect(),
       rdo: RDOTracker::new(),
     }
   }
