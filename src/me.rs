@@ -276,7 +276,7 @@ fn get_mv_range(
 pub fn get_subset_predictors<T: Pixel>(
   bo: BlockOffset, cmv: MotionVector,
   w_in_b: usize, h_in_b: usize,
-  frame_mvs: &FrameMotionVectors, frame_ref_opt: Option<&ReferenceFrame<T>>,
+  tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
   ref_frame_id: usize
 ) -> (Vec<MotionVector>) {
   let mut predictors = Vec::new();
@@ -291,17 +291,17 @@ pub fn get_subset_predictors<T: Pixel>(
 
   let mut median_preds = Vec::new();
   if bo.x > 0 {
-    let left = frame_mvs[bo.y][bo.x - 1];
+    let left = tile_mvs[bo.y][bo.x - 1];
     median_preds.push(left);
     if !left.is_zero() { predictors.push(left); }
   }
   if bo.y > 0 {
-    let top = frame_mvs[bo.y - 1][bo.x];
+    let top = tile_mvs[bo.y - 1][bo.x];
     median_preds.push(top);
     if !top.is_zero() { predictors.push(top); }
 
-    if bo.x < w_in_b - 1 {
-      let top_right = frame_mvs[bo.y - 1][bo.x + 1];
+    if bo.x < tile_mvs.cols() - 1 {
+      let top_right = tile_mvs[bo.y - 1][bo.x + 1];
       median_preds.push(top_right);
       if !top_right.is_zero() { predictors.push(top_right); }
     }
@@ -322,24 +322,28 @@ pub fn get_subset_predictors<T: Pixel>(
   if let Some(ref frame_ref) = frame_ref_opt {
     let prev_frame_mvs = &frame_ref.frame_mvs[ref_frame_id];
 
-    if bo.x > 0 {
-      let left = prev_frame_mvs[bo.y][bo.x - 1];
+    let frame_bo = BlockOffset {
+      x: tile_mvs.x() + bo.x,
+      y: tile_mvs.y() + bo.y,
+    };
+    if frame_bo.x > 0 {
+      let left = prev_frame_mvs[frame_bo.y][frame_bo.x - 1];
       if !left.is_zero() { predictors.push(left); }
     }
-    if bo.y > 0 {
-      let top = prev_frame_mvs[bo.y - 1][bo.x];
+    if frame_bo.y > 0 {
+      let top = prev_frame_mvs[frame_bo.y - 1][frame_bo.x];
       if !top.is_zero() { predictors.push(top); }
     }
-    if bo.x < w_in_b - 1 {
-      let right = prev_frame_mvs[bo.y][bo.x + 1];
+    if frame_bo.x < w_in_b - 1 {
+      let right = prev_frame_mvs[frame_bo.y][frame_bo.x + 1];
       if !right.is_zero() { predictors.push(right); }
     }
-    if bo.y < h_in_b - 1 {
-      let bottom = prev_frame_mvs[bo.y + 1][bo.x];
+    if frame_bo.y < h_in_b - 1 {
+      let bottom = prev_frame_mvs[frame_bo.y + 1][frame_bo.x];
       if !bottom.is_zero() { predictors.push(bottom); }
     }
 
-    let previous = prev_frame_mvs[bo.y][bo.x];
+    let previous = prev_frame_mvs[frame_bo.y][frame_bo.x];
     if !previous.is_zero() { predictors.push(previous); }
   }
 
@@ -417,6 +421,7 @@ pub trait MotionEstimation {
 
       let global_mv = [MotionVector{row: 0, col: 0}; 2];
       let frame_mvs = &fs.frame_mvs[ref_frame];
+      let tile_mvs = frame_mvs.as_tile_motion_vectors();
       let frame_ref_opt = fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
 
       let mut lowest_cost = std::u64::MAX;
@@ -427,7 +432,7 @@ pub trait MotionEstimation {
 
       Self::me_ss2(
         fi, fs, pmvs, bo_adj_h,
-        frame_mvs, frame_ref_opt, po, rec, global_mv, lambda,
+        &tile_mvs, frame_ref_opt, po, rec, global_mv, lambda,
         mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
         &mut best_mv, &mut lowest_cost
       );
@@ -441,7 +446,7 @@ pub trait MotionEstimation {
   fn me_ss2<T: Pixel>(
     fi: &FrameInvariants<T>, fs: &FrameState<T>,
     pmvs: &[Option<MotionVector>; 3], bo_adj_h: BlockOffset,
-    frame_mvs: &FrameMotionVectors, frame_ref_opt: Option<&ReferenceFrame<T>>,
+    tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
     po: PlaneOffset, rec: &ReferenceFrame<T>,
     global_mv: [MotionVector; 2], lambda: u32,
     mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
@@ -462,9 +467,10 @@ impl MotionEstimation for DiamondSearch {
     best_mv: &mut MotionVector, lowest_cost: &mut u64, ref_frame: RefType
   ) {
     let frame_mvs = &fs.frame_mvs[ref_frame.to_index()];
+    let tile_mvs = frame_mvs.as_tile_motion_vectors();
     let frame_ref = fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
     let predictors =
-      get_subset_predictors(bo, cmv, fi.w_in_b, fi.h_in_b, frame_mvs, frame_ref, ref_frame.to_index());
+      get_subset_predictors(bo, cmv, fi.w_in_b, fi.h_in_b, &tile_mvs, frame_ref, ref_frame.to_index());
 
     diamond_me_search(
       fi,
@@ -522,7 +528,7 @@ impl MotionEstimation for DiamondSearch {
   fn me_ss2<T: Pixel>(
     fi: &FrameInvariants<T>, fs: &FrameState<T>,
     pmvs: &[Option<MotionVector>; 3], bo_adj_h: BlockOffset,
-    frame_mvs: &FrameMotionVectors, frame_ref_opt: Option<&ReferenceFrame<T>>,
+    tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
     po: PlaneOffset, rec: &ReferenceFrame<T>,
     global_mv: [MotionVector; 2], lambda: u32,
     mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
@@ -535,7 +541,7 @@ impl MotionEstimation for DiamondSearch {
           bo_adj_h,
           MotionVector{row: pmv.row, col: pmv.col},
           fi.w_in_b, fi.h_in_b,
-          &frame_mvs, frame_ref_opt, 0
+          &tile_mvs, frame_ref_opt, 0
         );
 
         for predictor in &mut predictors {
@@ -626,7 +632,7 @@ impl MotionEstimation for FullSearch {
   fn me_ss2<T: Pixel>(
     fi: &FrameInvariants<T>, fs: &FrameState<T>,
     pmvs: &[Option<MotionVector>; 3], _bo_adj_h: BlockOffset,
-    _frame_mvs: &FrameMotionVectors, _frame_ref_opt: Option<&ReferenceFrame<T>>,
+    _tile_mvs: &TileMotionVectors<'_>, _frame_ref_opt: Option<&ReferenceFrame<T>>,
     po: PlaneOffset, rec: &ReferenceFrame<T>,
     _global_mv: [MotionVector; 2], lambda: u32,
     mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
