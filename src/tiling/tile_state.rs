@@ -11,10 +11,51 @@ use super::*;
 
 use crate::context::*;
 use crate::encoder::*;
+use crate::lrf::*;
 use crate::plane::*;
 use crate::quantize::*;
 use crate::rdo::*;
 use crate::util::*;
+
+#[derive(Debug, Clone)]
+pub struct TileRestorationPlane<'a> {
+  pub sbo: SuperBlockOffset,
+  pub rp: &'a RestorationPlane,
+  pub wiener_ref: [[i8; 3]; 2],
+  pub sgrproj_ref: [i8; 2],
+}
+
+impl<'a> TileRestorationPlane<'a> {
+  pub fn new(sbo: SuperBlockOffset, rp: &'a RestorationPlane) -> Self {
+    Self { sbo, rp, wiener_ref: [WIENER_TAPS_MID; 2], sgrproj_ref: SGRPROJ_XQD_MID }
+  }
+}
+
+/// Tiled version of RestorationState
+///
+/// Contrary to other views, TileRestorationState is not exposed as mutable
+/// because it is (possibly) shared between several tiles (due to restoration
+/// unit stretching).
+///
+/// It contains, for each plane, tile-specific data, and a reference to the
+/// frame-wise RestorationPlane, that will provide interior mutability to access
+/// restoration units from several tiles.
+#[derive(Debug, Clone)]
+pub struct TileRestorationState<'a> {
+  pub planes: [TileRestorationPlane<'a>; PLANES],
+}
+
+impl<'a> TileRestorationState<'a> {
+  pub fn new(sbo: SuperBlockOffset, rs: &'a RestorationState) -> Self {
+    Self {
+      planes: [
+        TileRestorationPlane::new(sbo, &rs.planes[0]),
+        TileRestorationPlane::new(sbo, &rs.planes[1]),
+        TileRestorationPlane::new(sbo, &rs.planes[2]),
+      ],
+    }
+  }
+}
 
 /// Tiled view of FrameState
 ///
@@ -43,6 +84,12 @@ use crate::util::*;
 /// Some others (like "rec") are written tile-wise, but must be accessible
 /// frame-wise once the tile views vanish (e.g. for deblocking).
 ///
+/// The "restoration" field is more complicated: some of its data
+/// (restoration units) are written tile-wise, but shared between several
+/// tiles. Therefore, they are stored in FrameState with interior mutability
+/// (protected by a mutex), and referenced from TileState.
+/// See <https://github.com/xiph/rav1e/issues/631#issuecomment-454419152>.
+///
 /// This is still work-in-progress. Some fields are not managed correctly
 /// between tile-wise and frame-wise accesses.
 #[derive(Debug)]
@@ -59,6 +106,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub rec: TileMut<'a, T>,
   pub qc: QuantizationContext,
   pub segmentation: &'a SegmentationState,
+  pub restoration: TileRestorationState<'a>,
   pub rdo: RDOTracker,
 }
 
@@ -89,6 +137,7 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       rec: TileMut::new(&mut fs.rec, luma_rect),
       qc: Default::default(),
       segmentation: &fs.segmentation,
+      restoration: TileRestorationState::new(sbo, &fs.restoration),
       rdo: RDOTracker::new(),
     }
   }
