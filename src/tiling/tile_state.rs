@@ -267,4 +267,22 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       rdo: RDOTracker::new(),
     }
   }
+
+  #[inline]
+  pub fn to_frame_plane_offset(&self, tile_po: PlaneOffset) -> PlaneOffset {
+    PlaneOffset {
+      x: self.luma_rect.x + tile_po.x,
+      y: self.luma_rect.y + tile_po.y,
+    }
+  }
+
+  #[inline]
+  pub fn to_frame_block_offset(&self, tile_bo: BlockOffset) -> BlockOffset {
+    debug_assert!(self.luma_rect.x as usize % MI_SIZE == 0);
+    debug_assert!(self.luma_rect.y as usize % MI_SIZE == 0);
+    BlockOffset {
+      x: ((self.luma_rect.x as usize) >> MI_SIZE) + tile_bo.x,
+      y: ((self.luma_rect.y as usize) >> MI_SIZE) + tile_bo.y,
+    }
+  }
 }
