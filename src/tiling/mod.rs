@@ -7,10 +7,12 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
+mod blocks_region;
 mod plane_region;
 mod tile;
 mod tile_state;
 
+pub use self::blocks_region::*;
 pub use self::plane_region::*;
 pub use self::tile::*;
 pub use self::tile_state::*;
