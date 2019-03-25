@@ -380,6 +380,16 @@ impl Sequence {
       }
     }
   }
+
+  #[inline]
+  pub fn sb_size_log2(&self) -> usize {
+    if self.use_128x128_superblock { 7 } else { 6 }
+  }
+
+  #[inline]
+  pub fn sb_size(&self) -> usize {
+    1 << self.sb_size_log2()
+  }
 }
 
 #[derive(Debug)]
@@ -834,6 +844,16 @@ impl<T: Pixel> FrameInvariants<T> {
     self.lambda =
       qps.lambda * ((1 << (2 * (self.sequence.bit_depth - 8))) as f64);
     self.me_lambda = self.lambda.sqrt();
+  }
+
+  #[inline(always)]
+  pub fn sb_size_log2(&self) -> usize {
+    self.sequence.sb_size_log2()
+  }
+
+  #[inline(always)]
+  pub fn sb_size(&self) -> usize {
+    self.sequence.sb_size()
   }
 }
 
