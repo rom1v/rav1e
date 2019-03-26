@@ -1397,6 +1397,14 @@ impl FrameBlocks {
     let bo = sbo.block_offset(0, 0);
     self[bo.y][bo.x].cdef_index
   }
+
+  pub fn as_region(&self) -> BlocksRegion<'_> {
+    BlocksRegion::new(self, 0, 0, self.cols, self.rows)
+  }
+
+  pub fn as_region_mut(&mut self) -> BlocksRegionMut<'_> {
+    BlocksRegionMut::new(self, 0, 0, self.cols, self.rows)
+  }
 }
 
 impl Index<usize> for FrameBlocks {
