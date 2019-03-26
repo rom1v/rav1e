@@ -26,6 +26,7 @@ use crate::partition::*;
 use crate::lrf::*;
 use crate::plane::*;
 use crate::scan_order::*;
+use crate::tiling::*;
 use crate::token_cdfs::*;
 use crate::util::{AlignedArray, clamp, msb, Pixel, UninitializedAlignedArray};
 
@@ -1396,6 +1397,16 @@ impl FrameBlocks {
   pub fn get_cdef(&mut self, sbo: SuperBlockOffset) -> u8 {
     let bo = sbo.block_offset(0, 0);
     self[bo.y][bo.x].cdef_index
+  }
+
+  #[inline]
+  pub fn as_region(&self) -> BlocksRegion<'_> {
+    BlocksRegion::new(self, 0, 0, self.cols, self.rows)
+  }
+
+  #[inline]
+  pub fn as_region_mut(&mut self) -> BlocksRegionMut<'_> {
+    BlocksRegionMut::new(self, 0, 0, self.cols, self.rows)
   }
 }
 
