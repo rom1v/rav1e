@@ -2081,13 +2081,20 @@ fn get_initial_cdfcontext<T: Pixel>(fi: &FrameInvariants<T>) -> CDFContext {
 }
 
 fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec<u8> {
-  let mut fc = get_initial_cdfcontext(fi);
-
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
-  let mut ts = fs.as_tile_state_mut();
-  let mut tb = blocks.as_region_mut();
 
-  let data = encode_tile(fi, &mut ts, &mut fc, &mut tb);
+  let tile_results = {
+    let mut ts = fs.as_tile_state_mut();
+    let mut tb = blocks.as_region_mut();
+    let mut ts_iter = [&mut ts].iter_mut();
+    let mut tb_iter = [&mut tb].iter_mut();
+    ts_iter.zip(tb_iter).map(|(ts, tb)| {
+      let mut fc = get_initial_cdfcontext(fi);
+
+      let data = encode_tile(fi, ts, &mut fc, tb);
+      (data, fc)
+    }).collect::<Vec<_>>()
+  };
 
   /* TODO: Don't apply if lossless */
   deblock_filter_optimize(fi, fs, &blocks);
@@ -2119,6 +2126,8 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
     fs.t.print_code();
   }
 
+  let (data, fc) = tile_results[0]; // single tile for now
+
   fs.cdfs = fc;
   fs.cdfs.reset_counts();
 
@@ -2127,8 +2136,8 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
 
 fn encode_tile<'a, T: Pixel>(
   fi: &FrameInvariants<T>,
-  ts: &mut TileStateMut<'_, T>,
-  fc: &'a mut CDFContext,
+  ts: &'a mut TileStateMut<'_, T>,
+  fc: &mut CDFContext,
   blocks: &'a mut BlocksRegionMut<'a>,
 ) -> Vec<u8> {
   let mut w = WriterEncoder::new();
