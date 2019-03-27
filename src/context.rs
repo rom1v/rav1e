@@ -1905,16 +1905,16 @@ pub struct ContextWriterCheckpoint {
   pub bc: BlockContextCheckpoint,
 }
 
-pub struct ContextWriter<'a> {
-  pub bc: BlockContext<'a>,
-  pub fc: CDFContext,
+pub struct ContextWriter<'a, 'b> {
+  pub fc: &'a mut CDFContext,
+  pub bc: BlockContext<'b>,
   #[cfg(debug)]
   fc_map: Option<FieldMap> // For debugging purposes
 }
 
-impl<'a> ContextWriter<'a> {
+impl<'a, 'b> ContextWriter<'a, 'b> {
   #[allow(clippy::let_and_return)]
-  pub fn new(fc: CDFContext, bc: BlockContext<'a>) -> Self {
+  pub fn new(fc: &'a mut CDFContext, bc: BlockContext<'b>) -> Self {
     #[allow(unused_mut)]
     let mut cw = ContextWriter {
       fc,
@@ -3785,13 +3785,13 @@ impl<'a> ContextWriter<'a> {
 
   pub fn checkpoint(&mut self) -> ContextWriterCheckpoint {
     ContextWriterCheckpoint {
-      fc: self.fc,
+      fc: *self.fc,
       bc: self.bc.checkpoint()
     }
   }
 
   pub fn rollback(&mut self, checkpoint: &ContextWriterCheckpoint) {
-    self.fc = checkpoint.fc;
+    *self.fc = checkpoint.fc;
     self.bc.rollback(&checkpoint.bc);
     #[cfg(debug)] {
       if self.fc_map.is_some() {
