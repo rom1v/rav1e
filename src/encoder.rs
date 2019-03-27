@@ -2059,19 +2059,28 @@ fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>
 }
 
 fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec<u8> {
-  let mut fc = if fi.primary_ref_frame == PRIMARY_REF_NONE {
-    CDFContext::new(fi.base_q_idx)
-  } else {
-    match fi.rec_buffer.frames[fi.ref_frames[fi.primary_ref_frame as usize] as usize] {
-      Some(ref rec) => rec.cdfs,
-      None => CDFContext::new(fi.base_q_idx)
-    }
-  };
-
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
-  let mut ts = fs.as_tile_state_mut();
 
-  let mut data = encode_tile(fi, &mut ts, &mut fc, blocks.as_region_mut());
+  {
+    let mut tile_states = fs.tile_state_iter_mut(1024, 1024);
+    // TODO frame_blocks.tile_blocks_iter_mut(...)
+    let mut tile_blocks = vec![blocks.as_region_mut()].iter_mut();
+    let tile_results = tile_states.zip(tile_blocks).map(|(ts, &mut blocks)| {
+      let mut fc = if fi.primary_ref_frame == PRIMARY_REF_NONE {
+        CDFContext::new(fi.base_q_idx)
+      } else {
+        match fi.rec_buffer.frames[fi.ref_frames[fi.primary_ref_frame as usize] as usize] {
+          Some(ref rec) => rec.cdfs,
+          None => CDFContext::new(fi.base_q_idx)
+        }
+      };
+
+      let data = encode_tile(fi, &mut ts, &mut fc, blocks);
+      (data, fc)
+    });
+  }
+
+  let mut ts = fs.as_tile_state_mut();
 
   /* TODO: Don't apply if lossless */
   deblock_filter_optimize(fi, fs, &blocks);
