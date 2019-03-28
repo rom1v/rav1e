@@ -11,8 +11,10 @@ mod blocks_region;
 mod plane_region;
 mod tile;
 mod tile_state;
+mod tiler;
 
 pub use self::blocks_region::*;
 pub use self::plane_region::*;
 pub use self::tile::*;
 pub use self::tile_state::*;
+pub use self::tiler::*;
