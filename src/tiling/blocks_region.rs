@@ -294,3 +294,130 @@ impl<'a> Iterator for TileBlocksIterMut<'a> {
 }
 
 impl ExactSizeIterator for TileBlocksIterMut<'_> {}
+
+#[cfg(test)]
+pub mod test {
+  use super::*;
+
+  #[test]
+  fn test_tile_blocks_iter_len() {
+    // frame size 160x144, 40x36 in 4x4-blocks
+    let mut fb = FrameBlocks::new(40, 36);
+
+    {
+      let mut iter = fb.tile_blocks_iter_mut(6, 2, 2);
+      assert_eq!(4, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(3, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(2, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(1, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(0, iter.len());
+      assert!(iter.next().is_none());
+    }
+
+    {
+      let mut iter = fb.tile_blocks_iter_mut(6, 1, 1);
+      assert_eq!(9, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(8, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(7, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(6, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(5, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(4, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(3, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(2, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(1, iter.len());
+      assert!(iter.next().is_some());
+      assert_eq!(0, iter.len());
+      assert!(iter.next().is_none());
+    }
+  }
+
+  #[inline]
+  fn rect(region: &BlocksRegionMut<'_>) -> (usize, usize, usize, usize) {
+    (region.x, region.y, region.cols, region.rows)
+  }
+
+  #[test]
+  fn test_tile_blocks_area() {
+    let mut fb = FrameBlocks::new(40, 36);
+
+    let tbs = fb.tile_blocks_iter_mut(6, 1, 1).collect::<Vec<_>>();
+    // the FrameBlocks must be split into 9 BlocksRegion:
+    //
+    //   16x16 16x16  8x16
+    //   16x16 16x16  8x16
+    //   16x 4 16x4   8x 4
+
+    assert_eq!(9, tbs.len());
+
+    assert_eq!((0, 0, 16, 16), rect(&tbs[0]));
+    assert_eq!((16, 0, 16, 16), rect(&tbs[1]));
+    assert_eq!((32, 0, 8, 16), rect(&tbs[2]));
+
+    assert_eq!((0, 16, 16, 16), rect(&tbs[3]));
+    assert_eq!((16, 16, 16, 16), rect(&tbs[4]));
+    assert_eq!((32, 16, 8, 16), rect(&tbs[5]));
+
+    assert_eq!((0, 32, 16, 4), rect(&tbs[6]));
+    assert_eq!((16, 32, 16, 4), rect(&tbs[7]));
+    assert_eq!((32, 32, 8, 4), rect(&tbs[8]));
+  }
+
+  #[test]
+  fn test_tile_blocks_write() {
+    let mut fb = FrameBlocks::new(40, 36);
+
+    {
+      let mut tbs = fb.tile_blocks_iter_mut(6, 1, 1).collect::<Vec<_>>();
+
+      {
+        // top-left tile
+        let tb = &mut tbs[0];
+        // block (4, 3)
+        tb[3][4].n4_w = 42;
+        // block (8, 5)
+        tb[5][8].segmentation_idx = 14;
+      }
+
+      {
+        // middle-right tile
+        let tb = &mut tbs[5];
+        // block (0, 1)
+        tb[1][0].n4_h = 11;
+        // block (7, 5)
+        tb[5][7].cdef_index = 3;
+      }
+
+      {
+        // bottom-middle tile
+        let tb = &mut tbs[7];
+        // block (3, 2)
+        tb[2][3].mode = PredictionMode::PAETH_PRED;
+        // block (1, 1)
+        tb[1][1].n4_w = 8;
+      }
+    }
+
+    // check that writes on tiles correctly affected the underlying blocks
+
+    assert_eq!(42, fb[3][4].n4_w);
+    assert_eq!(14, fb[5][8].segmentation_idx);
+
+    assert_eq!(11, fb[17][32].n4_h);
+    assert_eq!(3, fb[21][39].cdef_index);
+
+    assert_eq!(PredictionMode::PAETH_PRED, fb[34][19].mode);
+    assert_eq!(8, fb[33][17].n4_w);
+  }
+}
