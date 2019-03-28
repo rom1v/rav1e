@@ -9,6 +9,7 @@
 
 use crate::context::*;
 use crate::partition::*;
+use crate::util::*;
 
 use std::cmp;
 use std::marker::PhantomData;
@@ -223,3 +224,73 @@ impl IndexMut<BlockOffset> for BlocksRegionMut<'_> {
     &mut self[bo.y][bo.x]
   }
 }
+
+pub struct TileBlocksIterMut<'a> {
+  fb: *mut FrameBlocks,
+  tile_width: usize, // in blocks
+  tile_height: usize, // in blocks
+  cols: usize, // number of columns of tiles within the frame
+  rows: usize, // number of rows of tiles withing the frame
+  next: usize, // index of the next tile to yield
+  phantom: PhantomData<&'a mut FrameBlocks>,
+}
+
+impl<'a> TileBlocksIterMut<'a> {
+
+  /// Return an iterator over the blocks regions split by tiles
+  ///
+  /// # Arguments
+  ///
+  /// * `fb` - The whole FrameBlocks instance
+  /// * `sb_size_log2` - The log2 size of a superblock (typically 6 or 7)
+  /// * `tile_width_in_sb` - The width of a tile, in number of superblocks
+  /// * `tile_height_in_sb` - The width of a tile, in number of superblocks
+  pub fn from_frame_blocks(
+    fb: &'a mut FrameBlocks,
+    sb_size_log2: usize,
+    tile_width_in_sb: usize,
+    tile_height_in_sb: usize,
+  ) -> Self {
+    let frame_width_in_sb = fb.cols.align_power_of_two_and_shift(sb_size_log2 - MI_SIZE_LOG2);
+    let frame_height_in_sb = fb.rows.align_power_of_two_and_shift(sb_size_log2 - MI_SIZE_LOG2);
+
+    Self {
+      fb,
+      tile_width: tile_width_in_sb << (sb_size_log2 - MI_SIZE_LOG2),
+      tile_height: tile_height_in_sb << (sb_size_log2 - MI_SIZE_LOG2),
+      cols: (frame_width_in_sb + tile_width_in_sb - 1) / tile_width_in_sb,
+      rows: (frame_height_in_sb + tile_height_in_sb - 1) / tile_height_in_sb,
+      next: 0,
+      phantom: PhantomData,
+    }
+  }
+}
+
+impl<'a> Iterator for TileBlocksIterMut<'a> {
+  type Item = BlocksRegionMut<'a>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.next < self.rows * self.cols {
+      let fb = unsafe { &mut *self.fb };
+
+      let x = (self.next % self.cols) * self.tile_width;
+      let y = (self.next / self.cols) * self.tile_height;
+      let cols = self.tile_width.min(fb.cols - x);
+      let rows = self.tile_height.min(fb.rows - y);
+
+      self.next += 1;
+
+      let tb = BlocksRegionMut::new(fb, x, y, cols, rows);
+      Some(tb)
+    } else {
+      None
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let remaining = self.cols * self.rows - self.next;
+    (remaining, Some(remaining))
+  }
+}
+
+impl ExactSizeIterator for TileBlocksIterMut<'_> {}
