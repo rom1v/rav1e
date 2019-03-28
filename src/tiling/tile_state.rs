@@ -19,6 +19,7 @@ use crate::quantize::*;
 use crate::rdo::*;
 use crate::util::*;
 
+use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use std::slice;
 
@@ -286,3 +287,84 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
     }
   }
 }
+
+pub struct TileStateIterMut<'a, T: Pixel> {
+  fs: *mut FrameState<T>,
+  frame_width: usize,
+  frame_height: usize,
+  tile_width: usize,
+  tile_height: usize,
+  cols: usize, // number of columns of tiles within the frame
+  rows: usize, // number of rows of tiles within the frame
+  next: usize, // index of the next tile to yield
+  phantom: PhantomData<&'a mut FrameState<T>>,
+}
+
+impl<'a, T: Pixel> TileStateIterMut<'a, T> {
+
+  /// Return an iterator over `TileStateMut`
+  ///
+  /// # Arguments
+  ///
+  /// * `fs` - The whole FrameState instance
+  /// * `sb_size_log2` - The log2 size of a superblock (typically 6 or 7)
+  /// * `tile_width_in_sb` - The width of a tile, in number of superblocks
+  /// * `tile_height_in_sb` - The width of a tile, in number of superblocks
+  pub fn from_frame_state(
+    fs: &'a mut FrameState<T>,
+    sb_size_log2: usize,
+    tile_width_in_sb: usize,
+    tile_height_in_sb: usize,
+  ) -> Self {
+    let PlaneConfig {
+      width: frame_width,
+      height: frame_height,
+      ..
+    } = fs.rec.planes[0].cfg;
+
+    let frame_width_in_sb = frame_width.align_power_of_two_and_shift(sb_size_log2);
+    let frame_height_in_sb = frame_width.align_power_of_two_and_shift(sb_size_log2);
+
+    Self {
+      fs,
+      frame_width,
+      frame_height,
+      tile_width: tile_width_in_sb << sb_size_log2,
+      tile_height: tile_height_in_sb << sb_size_log2,
+      cols: (frame_width_in_sb + tile_width_in_sb - 1) / tile_width_in_sb,
+      rows: (frame_height_in_sb + tile_height_in_sb - 1) / tile_height_in_sb,
+      next: 0,
+      phantom: PhantomData,
+    }
+  }
+}
+
+impl<'a, T: Pixel> Iterator for TileStateIterMut<'a, T> {
+  type Item = TileStateMut<'a, T>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.next < self.rows * self.cols {
+      let fs = unsafe { &mut *self.fs };
+
+      let x = (self.next % self.cols) * self.tile_width;
+      let y = (self.next / self.cols) * self.tile_height;
+      let width = self.tile_width.min(self.frame_width - x);
+      let height = self.tile_height.min(self.frame_height - y);
+      let luma_rect = Rect { x: x as isize, y: y as isize, width, height };
+
+      self.next += 1;
+
+      let ts = TileStateMut::new(fs, luma_rect);
+      Some(ts)
+    } else {
+      None
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let remaining = self.cols * self.rows - self.next;
+    (remaining, Some(remaining))
+  }
+}
+
+impl<T: Pixel> ExactSizeIterator for TileStateIterMut<'_, T> {}
