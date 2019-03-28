@@ -1405,6 +1405,22 @@ impl FrameBlocks {
   pub fn as_region_mut(&mut self) -> BlocksRegionMut<'_> {
     BlocksRegionMut::new(self, 0, 0, self.cols, self.rows)
   }
+
+  /// Return an iterator over the blocks regions split by tiles
+  ///
+  /// # Arguments
+  ///
+  /// * `sb_size_log2` - The log2 size of a superblock (typically 6 or 7)
+  /// * `tile_width_in_sb` - The width of a tile, in number of superblocks
+  /// * `tile_height_in_sb` - The width of a tile, in number of superblocks
+  pub fn tile_blocks_iter_mut(
+    &mut self,
+    sb_size_log2: usize,
+    tile_width_in_sb: usize,
+    tile_height_in_sb: usize,
+  ) -> TileBlocksIterMut<'_> {
+    TileBlocksIterMut::from_frame_blocks(self, sb_size_log2, tile_width_in_sb, tile_height_in_sb)
+  }
 }
 
 impl Index<usize> for FrameBlocks {
