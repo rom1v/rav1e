@@ -2083,11 +2083,11 @@ fn get_initial_cdfcontext<T: Pixel>(fi: &FrameInvariants<T>) -> CDFContext {
 fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec<u8> {
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
 
-  let tile_results = {
-    let mut ts = fs.as_tile_state_mut();
-    let mut tb = blocks.as_region_mut();
-    let mut ts_iter = [&mut ts].iter_mut();
-    let mut tb_iter = [&mut tb].iter_mut();
+  let mut tile_results = {
+    let mut ts = [fs.as_tile_state_mut()];
+    let mut tb = [blocks.as_region_mut()];
+    let ts_iter = ts.iter_mut();
+    let tb_iter = tb.iter_mut();
     ts_iter.zip(tb_iter).map(|(ts, tb)| {
       let mut fc = get_initial_cdfcontext(fi);
 
@@ -2126,7 +2126,7 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
     fs.t.print_code();
   }
 
-  let (data, fc) = tile_results[0]; // single tile for now
+  let (data, fc) = tile_results.remove(0); // single tile for now
 
   fs.cdfs = fc;
   fs.cdfs.reset_counts();
@@ -2136,7 +2136,7 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
 
 fn encode_tile<'a, T: Pixel>(
   fi: &FrameInvariants<T>,
-  ts: &'a mut TileStateMut<'_, T>,
+  ts: &mut TileStateMut<'_, T>,
   fc: &mut CDFContext,
   blocks: &'a mut BlocksRegionMut<'a>,
 ) -> Vec<u8> {

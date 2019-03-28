@@ -1853,16 +1853,16 @@ pub struct ContextWriterCheckpoint {
   pub bc: BlockContextCheckpoint,
 }
 
-pub struct ContextWriter<'a> {
-  pub bc: BlockContext<'a>,
+pub struct ContextWriter<'a, 'b> {
   pub fc: &'a mut CDFContext,
+  pub bc: BlockContext<'b>,
   #[cfg(debug)]
   fc_map: Option<FieldMap> // For debugging purposes
 }
 
-impl<'a> ContextWriter<'a> {
+impl<'a, 'b> ContextWriter<'a, 'b> {
   #[allow(clippy::let_and_return)]
-  pub fn new(fc: &'a mut CDFContext, bc: BlockContext<'a>) -> Self {
+  pub fn new(fc: &'a mut CDFContext, bc: BlockContext<'b>) -> Self {
     #[allow(unused_mut)]
     let mut cw = ContextWriter {
       fc,
