@@ -1478,11 +1478,11 @@ pub struct BlockContext<'a> {
   left_tx_context: [u8; MAX_MIB_SIZE],
   above_coeff_context: [Vec<u8>; PLANES],
   left_coeff_context: [[u8; MAX_MIB_SIZE]; PLANES],
-  pub blocks: BlocksRegionMut<'a>,
+  pub blocks: &'a mut BlocksRegionMut<'a>,
 }
 
 impl<'a> BlockContext<'a> {
-  pub fn new(blocks: BlocksRegionMut<'a>) -> Self {
+  pub fn new(blocks: &'a mut BlocksRegionMut<'a>) -> Self {
     // Align power of two
     let aligned_cols = (blocks.cols() + ((1 << MAX_MIB_SIZE_LOG2) - 1))
       & !((1 << MAX_MIB_SIZE_LOG2) - 1);

@@ -2087,8 +2087,9 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
 
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
   let mut ts = fs.as_tile_state_mut();
+  let mut tb = blocks.as_region_mut();
 
-  let data = encode_tile(fi, &mut ts, &mut fc, blocks.as_region_mut());
+  let data = encode_tile(fi, &mut ts, &mut fc, &mut tb);
 
   /* TODO: Don't apply if lossless */
   deblock_filter_optimize(fi, fs, &blocks);
@@ -2126,11 +2127,11 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
   data
 }
 
-fn encode_tile<T: Pixel>(
+fn encode_tile<'a, T: Pixel>(
   fi: &FrameInvariants<T>,
   ts: &mut TileStateMut<'_, T>,
-  fc: &mut CDFContext,
-  blocks: BlocksRegionMut<'_>,
+  fc: &'a mut CDFContext,
+  blocks: &'a mut BlocksRegionMut<'a>,
 ) -> Vec<u8> {
   let mut w = WriterEncoder::new();
 
