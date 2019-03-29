@@ -1627,8 +1627,8 @@ fn encode_partition_bottomup<T: Pixel>(
   let is_square = bsize.is_sqr();
 
   // Always split if the current partition is too large
-  let must_split = (bo.x + bsw as usize > fi.w_in_b ||
-                    bo.y + bsh as usize > fi.h_in_b ||
+  let must_split = (bo.x + bsw as usize > ts.w_in_b ||
+                    bo.y + bsh as usize > ts.h_in_b ||
                     bsize.greater_than(BlockSize::BLOCK_64X64)) && is_square;
 
   // must_split overrides the minimum partition size when applicable
@@ -1663,7 +1663,7 @@ fn encode_partition_bottomup<T: Pixel>(
     if !mode_decision.pred_mode_luma.is_intra() {
       // Fill the saved motion structure
       save_block_motion(
-        ts, fi.w_in_b, fi.h_in_b, mode_decision.bsize, mode_decision.bo,
+        ts, ts.w_in_b, ts.h_in_b, mode_decision.bsize, mode_decision.bo,
         mode_decision.ref_frames[0].to_index(), mode_decision.mvs[0]
       );
     }
@@ -1690,8 +1690,8 @@ fn encode_partition_bottomup<T: Pixel>(
         partition == PartitionType::PARTITION_VERT { continue; }
 
       if must_split {
-        let cbw = (fi.w_in_b - bo.x).min(bsw); // clipped block width, i.e. having effective pixels
-        let cbh = (fi.h_in_b - bo.y).min(bsh);
+        let cbw = (ts.w_in_b - bo.x).min(bsw); // clipped block width, i.e. having effective pixels
+        let cbh = (ts.h_in_b - bo.y).min(bsh);
         let mut split_vert = false;
         let mut split_horz = false;
         if cbw == bsw/2 && cbh == bsh { split_vert = true; }
@@ -1791,7 +1791,7 @@ fn encode_partition_bottomup<T: Pixel>(
 
           if !mode.pred_mode_luma.is_intra() {
             save_block_motion(
-              ts, fi.w_in_b, fi.h_in_b, mode.bsize, mode.bo,
+              ts, ts.w_in_b, ts.h_in_b, mode.bsize, mode.bo,
               mode.ref_frames[0].to_index(), mode.mvs[0]
             );
           }
@@ -1835,8 +1835,8 @@ fn encode_partition_topdown<T: Pixel>(
   let rdo_type = RDOType::PixelDistRealRate;
 
   // Always split if the current partition is too large
-  let must_split = (bo.x + bsw as usize > fi.w_in_b ||
-                    bo.y + bsh as usize > fi.h_in_b ||
+  let must_split = (bo.x + bsw as usize > ts.w_in_b ||
+                    bo.y + bsh as usize > ts.h_in_b ||
                     bsize.greater_than(BlockSize::BLOCK_64X64)) && is_square;
 
   let mut rdo_output = block_output.clone().unwrap_or(RDOOutput {
@@ -1848,8 +1848,8 @@ fn encode_partition_topdown<T: Pixel>(
   let mut split_vert = false;
   let mut split_horz = false;
   if must_split {
-    let cbw = (fi.w_in_b - bo.x).min(bsw); // clipped block width, i.e. having effective pixels
-    let cbh = (fi.h_in_b - bo.y).min(bsh);
+    let cbw = (ts.w_in_b - bo.x).min(bsw); // clipped block width, i.e. having effective pixels
+    let cbh = (ts.h_in_b - bo.y).min(bsh);
 
     if cbw == bsw/2 && cbh == bsh &&
       fi.sequence.chroma_sampling != ChromaSampling::Cs422 { split_vert = true; }
@@ -1968,7 +1968,7 @@ fn encode_partition_topdown<T: Pixel>(
         }
 
         save_block_motion(
-          ts, fi.w_in_b, fi.h_in_b,
+          ts, ts.w_in_b, ts.h_in_b,
           part_decision.bsize, part_decision.bo,
           part_decision.ref_frames[0].to_index(), part_decision.mvs[0]
         );
