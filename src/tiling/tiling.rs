@@ -32,7 +32,11 @@ pub struct TilingInfo {
 }
 
 impl TilingInfo {
-  pub fn from_tile_size_sb<T: Pixel>(
+  pub fn new<T: Pixel>(fi: &FrameInvariants<T>) -> Self {
+    Self::from_tile_count(fi, fi.tile_cols_log2, fi.tile_rows_log2)
+  }
+
+  fn from_tile_size_sb<T: Pixel>(
     fi: &FrameInvariants<T>,
     tile_width_sb: usize,
     tile_height_sb: usize,
@@ -55,7 +59,7 @@ impl TilingInfo {
     }
   }
 
-  pub fn from_tile_count<T: Pixel>(
+  fn from_tile_count<T: Pixel>(
     fi: &FrameInvariants<T>,
     tile_cols_log2: usize,
     tile_rows_log2: usize,
