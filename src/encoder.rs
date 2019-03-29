@@ -2077,10 +2077,14 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
   let initial_cdf = get_initial_cdfcontext(fi);
   let mut cdfs = vec![initial_cdf; ti.tile_count()];
 
-  let mut tile_results = ti
+  let mut tiles_input = ti
     .tile_iter_mut(fs, &mut blocks)
     .zip(cdfs.iter_mut())
-    .map(|(mut ctx, cdf)| encode_tile(fi, &mut ctx.ts, cdf, &mut ctx.tb))
+    .collect::<Vec<_>>();
+
+  let mut tile_results = tiles_input
+    .par_iter_mut()
+    .map(|(ref mut ctx, cdf)| encode_tile(fi, &mut ctx.ts, cdf, &mut ctx.tb))
     .collect::<Vec<_>>();
 
   /* TODO: Don't apply if lossless */
