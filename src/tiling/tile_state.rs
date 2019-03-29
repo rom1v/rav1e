@@ -226,6 +226,8 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub input_qres: &'a Plane<T>,
   pub deblock: &'a DeblockState,
   pub luma_rect: Rect,
+  pub w_in_b: usize,
+  pub h_in_b: usize,
   pub rec: TileMut<'a, T>,
   pub qc: QuantizationContext,
   pub cdfs: CDFContext,
@@ -244,6 +246,8 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
     assert!(luma_rect.y >= 0);
     assert!(luma_rect.width & (MI_SIZE - 1) == 0, "luma_rect must be a multiple of MI_SIZE");
     assert!(luma_rect.height & (MI_SIZE - 1) == 0, "luma_rect must be a multiple of MI_SIZE");
+    let w_in_b = luma_rect.width >> MI_SIZE_LOG2;
+    let h_in_b = luma_rect.height >> MI_SIZE_LOG2;
     Self {
       input: &fs.input,
       input_tile: Tile::new(&fs.input, luma_rect),
@@ -251,6 +255,8 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       input_qres: &fs.input_qres,
       deblock: &fs.deblock,
       luma_rect,
+      w_in_b,
+      h_in_b,
       rec: TileMut::new(&mut fs.rec, luma_rect),
       qc: Default::default(),
       cdfs: CDFContext::new(0),
