@@ -234,6 +234,8 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub sb_size_log2: usize,
   pub width: usize,
   pub height: usize,
+  pub w_in_b: usize,
+  pub h_in_b: usize,
   pub input: &'a Frame<T>, // the whole frame
   pub input_tile: Tile<'a, T>, // the current tile
   pub input_hres: &'a Plane<T>,
@@ -269,6 +271,8 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       sb_size_log2,
       width,
       height,
+      w_in_b: width >> MI_SIZE_LOG2,
+      h_in_b: height >> MI_SIZE_LOG2,
       input: &fs.input,
       input_tile: Tile::new(&fs.input, luma_rect),
       input_hres: &fs.input_hres,
