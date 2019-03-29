@@ -501,4 +501,41 @@ pub mod test {
     assert_eq!(PredictionMode::PAETH_PRED, fb[34][19].mode);
     assert_eq!(8, fb[33][17].n4_w);
   }
+
+  #[test]
+  fn test_tiling_from_tile_count() {
+    let fi = create_frame_invariants(160, 144, ChromaSampling::Cs420);
+
+    let ti = TilingInfo::from_tile_count(&fi, 0, 0);
+    assert_eq!(1, ti.cols);
+    assert_eq!(1, ti.rows);
+    assert_eq!(3, ti.tile_width_sb);
+    assert_eq!(3, ti.tile_height_sb);
+
+    let ti = TilingInfo::from_tile_count(&fi, 1, 1);
+    assert_eq!(2, ti.cols);
+    assert_eq!(2, ti.rows);
+    assert_eq!(2, ti.tile_width_sb);
+    assert_eq!(2, ti.tile_height_sb);
+
+    let ti = TilingInfo::from_tile_count(&fi, 2, 2);
+    assert_eq!(3, ti.cols);
+    assert_eq!(3, ti.rows);
+    assert_eq!(1, ti.tile_width_sb);
+    assert_eq!(1, ti.tile_height_sb);
+
+    // cannot split more than superblocks
+    let ti = TilingInfo::from_tile_count(&fi, 10, 8);
+    assert_eq!(3, ti.cols);
+    assert_eq!(3, ti.rows);
+    assert_eq!(1, ti.tile_width_sb);
+    assert_eq!(1, ti.tile_height_sb);
+
+    let fi = create_frame_invariants(1024, 1024, ChromaSampling::Cs420);
+    let ti = TilingInfo::from_tile_count(&fi, 0, 0);
+    assert_eq!(1, ti.cols);
+    assert_eq!(1, ti.rows);
+    assert_eq!(16, ti.tile_width_sb);
+    assert_eq!(16, ti.tile_height_sb);
+  }
 }
