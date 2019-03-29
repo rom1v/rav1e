@@ -1627,8 +1627,8 @@ fn encode_partition_bottomup<T: Pixel>(
   let is_square = bsize.is_sqr();
 
   // Always split if the current partition is too large
-  let must_split = (bo.x + bsw as usize > fi.w_in_b ||
-                    bo.y + bsh as usize > fi.h_in_b ||
+  let must_split = (bo.x + bsw as usize > ts.w_in_b ||
+                    bo.y + bsh as usize > ts.h_in_b ||
                     bsize.greater_than(BlockSize::BLOCK_64X64)) && is_square;
 
   // must_split overrides the minimum partition size when applicable
@@ -1835,8 +1835,8 @@ fn encode_partition_topdown<T: Pixel>(
   let rdo_type = RDOType::PixelDistRealRate;
 
   // Always split if the current partition is too large
-  let must_split = (bo.x + bsw as usize > fi.w_in_b ||
-                    bo.y + bsh as usize > fi.h_in_b ||
+  let must_split = (bo.x + bsw as usize > ts.w_in_b ||
+                    bo.y + bsh as usize > ts.h_in_b ||
                     bsize.greater_than(BlockSize::BLOCK_64X64)) && is_square;
 
   let mut rdo_output = block_output.clone().unwrap_or(RDOOutput {
