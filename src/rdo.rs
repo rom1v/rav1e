@@ -1160,7 +1160,7 @@ pub fn rdo_partition_decision<T: Pixel>(
           BlockOffset{ x: bo.x, y: bo.y + hbsh as usize },
           BlockOffset{ x: bo.x + hbsw as usize, y: bo.y + hbsh as usize }
         ];
-        let partitions = get_sub_partitions_with_border_check(&four_partitions, partition, fi.w_in_b, fi.h_in_b, subsize);
+        let partitions = get_sub_partitions_with_border_check(&four_partitions, partition, ts.w_in_b, ts.h_in_b, subsize);
 
         let pmv_idxs = partitions.iter().map(|&offset| {
           if subsize.greater_than(BlockSize::BLOCK_32X32) {
