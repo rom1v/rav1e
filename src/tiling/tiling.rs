@@ -7,8 +7,13 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
+use super::*;
+
+use crate::context::*;
 use crate::encoder::*;
 use crate::util::*;
+
+use std::marker::PhantomData;
 
 #[derive(Clone, Copy)]
 pub struct TilingInfo {
@@ -49,4 +54,76 @@ impl TilingInfo {
   pub fn tile_count(&self) -> usize {
     self.cols * self.rows
   }
+
+  pub fn tile_iter_mut<'a, 'b, T: Pixel>(
+    &self,
+    fs: &'a mut FrameState<T>,
+    fb: &'b mut FrameBlocks,
+  ) -> TileContextIterMut<'a, 'b, T> {
+    TileContextIterMut {
+      ti: *self,
+      fs,
+      fb,
+      next: 0,
+      phantom: PhantomData,
+    }
+  }
 }
+
+pub struct TileContextMut<'a, 'b, T: Pixel> {
+  pub ts: TileStateMut<'a, T>,
+  pub tb: BlocksRegionMut<'b>,
+}
+
+pub struct TileContextIterMut<'a, 'b, T: Pixel> {
+  ti: TilingInfo,
+  fs: *mut FrameState<T>,
+  fb: *mut FrameBlocks,
+  next: usize,
+  phantom: PhantomData<(&'a mut FrameState<T>, &'b mut FrameBlocks)>,
+}
+
+impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
+  type Item = TileContextMut<'a, 'b, T>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.next < self.ti.rows * self.ti.cols {
+      let tile_col = self.next % self.ti.cols;
+      let tile_row = self.next / self.ti.cols;
+      let ctx = TileContextMut {
+        ts: {
+          let fs = unsafe { &mut *self.fs };
+          let tile_width = self.ti.tile_width_sb << self.ti.sb_size_log2;
+          let tile_height = self.ti.tile_height_sb << self.ti.sb_size_log2;
+          let x = tile_col * tile_width;
+          let y = tile_row * tile_height;
+          let width = tile_width.min(self.ti.frame_width - x);
+          let height = tile_height.min(self.ti.frame_height - y);
+          let luma_rect = Rect { x: x as isize, y: y as isize, width, height };
+          TileStateMut::new(fs, luma_rect)
+        },
+        tb: {
+          let fb = unsafe { &mut *self.fb };
+          let tile_width_mi = self.ti.tile_width_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
+          let tile_height_mi = self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
+          let x = tile_col * tile_width_mi;
+          let y = tile_row * tile_height_mi;
+          let cols = tile_width_mi.min(fb.cols - x);
+          let rows = tile_height_mi.min(fb.rows - y);
+          BlocksRegionMut::new(fb, x, y, cols, rows)
+        }
+      };
+      self.next += 1;
+      Some(ctx)
+    } else {
+      None
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let remaining = self.ti.cols * self.ti.rows - self.next;
+    (remaining, Some(remaining))
+  }
+}
+
+impl<T: Pixel> ExactSizeIterator for TileContextIterMut<'_, '_, T> {}
