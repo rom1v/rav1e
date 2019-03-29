@@ -15,6 +15,11 @@ use crate::util::*;
 
 use std::marker::PhantomData;
 
+pub const MAX_TILE_WIDTH: usize = 4096;
+pub const MAX_TILE_AREA: usize = 4096 * 2304;
+pub const MAX_TILE_COLS: usize = 64;
+pub const MAX_TILE_ROWS: usize = 64;
+
 #[derive(Debug, Clone, Copy)]
 pub struct TilingInfo {
   pub frame_width: usize,
@@ -48,6 +53,49 @@ impl TilingInfo {
       rows,
       sb_size_log2,
     }
+  }
+
+  pub fn from_tile_count<T: Pixel>(
+    fi: &FrameInvariants<T>,
+    tile_cols_log2: usize,
+    tile_rows_log2: usize,
+  ) -> Self {
+    // <https://aomediacodec.github.io/av1-spec/#tile-info-syntax>
+    let sb_size_log2 = fi.sb_size_log2();
+    let frame_width = fi.width.align_power_of_two(3);
+    let frame_height = fi.height.align_power_of_two(3);
+    let sb_cols = frame_width.align_power_of_two_and_shift(sb_size_log2);
+    let sb_rows = frame_height.align_power_of_two_and_shift(sb_size_log2);
+
+    let max_tile_width_sb = MAX_TILE_WIDTH >> sb_size_log2;
+    let max_tile_area_sb = MAX_TILE_AREA >> 2 * sb_size_log2;
+    let min_tile_cols_log2 = Self::tile_log2(max_tile_width_sb, sb_cols);
+    let max_tile_cols_log2 = Self::tile_log2(1, sb_cols.min(MAX_TILE_COLS));
+    let max_tile_rows_log2 = Self::tile_log2(1, sb_rows.min(MAX_TILE_ROWS));
+
+    let min_tiles_log2 =
+      min_tile_cols_log2.max(Self::tile_log2(max_tile_area_sb, sb_cols * sb_rows));
+
+    let tile_cols_log2 = tile_cols_log2.max(min_tile_cols_log2).min(max_tile_cols_log2);
+    let tile_width_sb = sb_cols.align_power_of_two_and_shift(tile_cols_log2);
+
+    let min_tile_rows_log2 = if min_tiles_log2 > tile_cols_log2 { min_tiles_log2 - tile_cols_log2 } else { 0 };
+    let tile_rows_log2 = tile_rows_log2.max(min_tile_rows_log2).min(max_tile_rows_log2);
+    let tile_height_sb = sb_rows.align_power_of_two_and_shift(tile_rows_log2);
+
+    Self::from_tile_size_sb(fi, tile_width_sb, tile_height_sb)
+  }
+
+  /// Return the smallest value for `k` such that `blkSize << k` is greater than
+  /// or equal to `target`.
+  ///
+  /// <https://aomediacodec.github.io/av1-spec/#tile-size-calculation-function>
+  fn tile_log2(blk_size: usize, target: usize) -> usize {
+    let mut k = 0;
+    while (blk_size << k) < target {
+      k += 1;
+    }
+    k
   }
 
   #[inline(always)]
