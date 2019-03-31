@@ -955,8 +955,8 @@ pub fn get_intra_edges<T: Pixel>(
           tx_size.height() << plane_cfg.ydec
         );
 
-      let num_avail = if top_edge != 0 && has_tr(bo, bsize) {
-        tx_size.width().min(plane_cfg.width - x - tx_size.width())
+      let num_avail = if top_edge != 0 && has_tr(bo, bsize) && dst.region.rect().width > x + tx_size.width() {
+        tx_size.width().min(dst.region.rect().width - x - tx_size.width())
       } else {
         0
       };
@@ -986,8 +986,8 @@ pub fn get_intra_edges<T: Pixel>(
         tx_size.height() << plane_cfg.ydec
         );
 
-      let num_avail = if left_edge != 0 && has_bl(bo, bsize) {
-        tx_size.height().min(plane_cfg.height - y - tx_size.height())
+      let num_avail = if left_edge != 0 && has_bl(bo, bsize) && dst.region.rect().height > y + tx_size.height() {
+        tx_size.height().min(dst.region.rect().height - y - tx_size.height())
       } else {
         0
       };
