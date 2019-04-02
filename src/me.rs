@@ -512,8 +512,8 @@ impl MotionEstimation for DiamondSearch {
     best_mv: &mut MotionVector, lowest_cost: &mut u64
   ) {
     let po = PlaneOffset {
-      x: (bo_adj.x as isize) << BLOCK_TO_PLANE_SHIFT >> 1,
-      y: (bo_adj.y as isize) << BLOCK_TO_PLANE_SHIFT >> 1,
+      x: (bo_adj.x as isize) >> 1 << BLOCK_TO_PLANE_SHIFT,
+      y: (bo_adj.y as isize) >> 1 << BLOCK_TO_PLANE_SHIFT,
     };
     for omv in pmvs.iter() {
       if let Some(pmv) = omv {
@@ -619,8 +619,8 @@ impl MotionEstimation for FullSearch {
     best_mv: &mut MotionVector, lowest_cost: &mut u64
   ) {
     let po = PlaneOffset {
-      x: (bo_adj.x as isize) << BLOCK_TO_PLANE_SHIFT >> 1,
-      y: (bo_adj.y as isize) << BLOCK_TO_PLANE_SHIFT >> 1,
+      x: (bo_adj.x as isize) >> 1 << BLOCK_TO_PLANE_SHIFT,
+      y: (bo_adj.y as isize) >> 1 << BLOCK_TO_PLANE_SHIFT,
     };
     let range = 16;
     for omv in pmvs.iter() {
