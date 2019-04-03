@@ -2081,18 +2081,21 @@ fn get_initial_cdfcontext<T: Pixel>(fi: &FrameInvariants<T>) -> CDFContext {
   cdf.unwrap_or(CDFContext::new(fi.base_q_idx))
 }
 
-fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec<u8> {
+fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> TileGroupData {
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
   let initial_cdf = get_initial_cdfcontext(fi);
   let mut cdfs = vec![initial_cdf; fi.tiling.tile_count()];
 
-  let mut tile_results = fi.tiling
+  let mut tile_group_data = fi.tiling
     .tile_iter_mut(fs, &mut blocks)
     .zip(cdfs.iter_mut())
     .collect::<Vec<_>>()
     .par_iter_mut()
     .map(|(ref mut ctx, cdf)| encode_tile(fi, &mut ctx.ts, cdf, &mut ctx.tb))
-    .collect::<Vec<_>>();
+    .map(Vec::into_boxed_slice)
+    .map(|raw| TileData { coded: raw })
+    .collect::<Vec<_>>()
+    .into_boxed_slice();
 
   /* TODO: Don't apply if lossless */
   deblock_filter_optimize(fi, fs, &blocks);
@@ -2124,12 +2127,13 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
     fs.t.print_code();
   }
 
-  let data = tile_results.remove(0); // single tile for now
-
   fs.cdfs = cdfs[0];
   fs.cdfs.reset_counts();
 
-  data
+  TileGroupData {
+    context_update_tile_id: 0,
+    data: tile_group_data,
+  }
 }
 
 fn encode_tile<'a, T: Pixel>(
@@ -2366,7 +2370,7 @@ pub fn encode_frame<T: Pixel>(
 
   segmentation_optimize(fi, fs);
 
-  let tile_group = encode_tile_group(fi, fs);
+  let tile_group_data = encode_tile_group(fi, fs);
 
   write_obus(&mut packet, fi, fs).unwrap();
   let mut buf1 = Vec::new();
@@ -2377,6 +2381,8 @@ pub fn encode_frame<T: Pixel>(
   packet.write_all(&buf1).unwrap();
   buf1.clear();
 
+  // TODO compute tile_group_data size?
+
   {
     let mut bw1 = BitWriter::endian(&mut buf1, BigEndian);
     bw1.write_uleb128(tile_group.len() as u64).unwrap();
@@ -2384,7 +2390,10 @@ pub fn encode_frame<T: Pixel>(
   packet.write_all(&buf1).unwrap();
   buf1.clear();
 
-  packet.write_all(&tile_group).unwrap();
+  // TODO write_tile_group_obu()
+  // <https://aomediacodec.github.io/av1-spec/#general-tile-group-obu-syntax>
+
+  //packet.write_all(&tile_group).unwrap();
   packet
 }
 
