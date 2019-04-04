@@ -209,6 +209,30 @@ macro_rules! plane_region_common {
           phantom: PhantomData,
         }
       }
+
+      #[inline]
+      pub fn to_frame_plane_offset(&self, tile_po: PlaneOffset) -> PlaneOffset {
+        PlaneOffset {
+          x: self.rect.x + tile_po.x,
+          y: self.rect.y + tile_po.y,
+        }
+      }
+
+      #[inline]
+      pub fn to_frame_block_offset(&self, tile_bo: BlockOffset) -> BlockOffset {
+        debug_assert!(self.rect.x >= 0);
+        debug_assert!(self.rect.y >= 0);
+        debug_assert!(self.rect.x as usize % MI_SIZE == 0);
+        debug_assert!(self.rect.y as usize % MI_SIZE == 0);
+        let self_bo = BlockOffset {
+          x: self.rect.x as usize >> MI_SIZE_LOG2 - self.plane_cfg.xdec,
+          y: self.rect.y as usize >> MI_SIZE_LOG2 - self.plane_cfg.ydec,
+        };
+        BlockOffset {
+          x: self_bo.x + tile_bo.x,
+          y: self_bo.y + tile_bo.y,
+        }
+      }
     }
 
     unsafe impl<T: Pixel> Send for $name<'_, T> {}
