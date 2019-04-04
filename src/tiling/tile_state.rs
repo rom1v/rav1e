@@ -278,4 +278,17 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       y: ((self.luma_rect.y as usize) >> MI_SIZE_LOG2) + tile_bo.y,
     }
   }
+
+  #[inline]
+  pub fn to_frame_super_block_offset(&self, tile_sbo: SuperBlockOffset) -> SuperBlockOffset {
+    // FIXME only support 64x64 superblocks
+    debug_assert!(self.luma_rect.x >= 0);
+    debug_assert!(self.luma_rect.y >= 0);
+    debug_assert!(self.luma_rect.x as usize % (1 << SUPERBLOCK_TO_PLANE_SHIFT) == 0);
+    debug_assert!(self.luma_rect.y as usize % (1 << SUPERBLOCK_TO_PLANE_SHIFT) == 0);
+    SuperBlockOffset {
+      x: (self.luma_rect.x as usize >> SUPERBLOCK_TO_PLANE_SHIFT) + tile_sbo.x,
+      y: (self.luma_rect.y as usize >> SUPERBLOCK_TO_PLANE_SHIFT) + tile_sbo.y,
+    }
+  }
 }
