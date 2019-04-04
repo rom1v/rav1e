@@ -2146,12 +2146,14 @@ fn build_raw_tile_group(ti: &TilingInfo, raw_tiles: &Vec<Vec<u8>>) -> Vec<u8> {
     bw.write_bit(false).unwrap();
   }
   bw.byte_align().unwrap();
+  println!("=======");
   for (i, raw_tile) in raw_tiles.iter().enumerate() {
     let last = raw_tiles.len() - 1;
     if i != last {
       let tile_size_minus_1 = raw_tile.len() - 1;
       bw.write_le(4, tile_size_minus_1 as u64).unwrap();
     }
+    println!("write tile ({} bytes)", raw_tile.len());
     bw.write_bytes(&raw_tile).unwrap();
   }
   raw
