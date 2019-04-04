@@ -1170,6 +1170,7 @@ impl PredictionMode {
     ref_frames: [RefType; 2], mvs: [MotionVector; 2]
   ) {
     assert!(!self.is_intra());
+    let frame_po = dst.to_frame_plane_offset(po);
 
     let mode = FilterMode::REGULAR;
     let is_compound =
@@ -1196,7 +1197,7 @@ impl PredictionMode {
 
     if !is_compound {
       if let Some(ref rec) = fi.rec_buffer.frames[fi.ref_frames[ref_frames[0].to_index()] as usize] {
-        let (row_frac, col_frac, src) = get_params(&rec.frame.planes[p], po, mvs[0]);
+        let (row_frac, col_frac, src) = get_params(&rec.frame.planes[p], frame_po, mvs[0]);
         put_8tap(
           dst,
           src,
@@ -1214,7 +1215,7 @@ impl PredictionMode {
         [UninitializedAlignedArray(), UninitializedAlignedArray()];
       for i in 0..2 {
         if let Some(ref rec) = fi.rec_buffer.frames[fi.ref_frames[ref_frames[i].to_index()] as usize] {
-          let (row_frac, col_frac, src) = get_params(&rec.frame.planes[p], po, mvs[i]);
+          let (row_frac, col_frac, src) = get_params(&rec.frame.planes[p], frame_po, mvs[i]);
           prep_8tap(
             &mut tmp[i].array,
             src,
