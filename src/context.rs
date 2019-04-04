@@ -3153,7 +3153,7 @@ impl<'a> ContextWriter<'a> {
           let ru = trp.rp.restoration_unit(sbo);
           let mut ru = ru.lock().unwrap();
           code = !ru.coded;
-          ru.coded = true;
+          //ru.coded = true;
           ru.filter
         };
         if code {
