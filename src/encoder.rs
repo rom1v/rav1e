@@ -2000,7 +2000,11 @@ fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, fs: &FrameState<T>) -> V
       for i in 0..INTER_REFS_PER_FRAME {
         let r = fi.ref_frames[i] as usize;
         if pmvs[r].is_none() {
-          pmvs[r] = estimate_motion_ss4(fi, fs, BlockSize::BLOCK_64X64, r, bo);
+          pmvs[r] = if fi.w_in_b >= 16 && fi.h_in_b >= 16 {
+            estimate_motion_ss4(fi, fs, BlockSize::BLOCK_64X64, r, bo)
+          } else {
+            Some(Default::default())
+          }
         }
       }
       pmvs
@@ -2122,52 +2126,59 @@ fn encode_tile<T: Pixel>(
             let mut pmvs2 = None;
             let mut pmvs3 = None;
             let mut pmvs4 = None;
-            rayon::scope(|s| {
-              s.spawn(|_| {
-                pmvs1 = estimate_motion_ss2(
-                  fi,
-                  fs,
-                  BlockSize::BLOCK_32X32,
-                  r,
-                  sbo.block_offset(0, 0),
-                  &[Some(pmv), pmv_w, pmv_n],
-                  i
-                )
+            if fi.w_in_b >= 8 && fi.h_in_b >= 8 {
+              rayon::scope(|s| {
+                s.spawn(|_| {
+                  pmvs1 = estimate_motion_ss2(
+                    fi,
+                    fs,
+                    BlockSize::BLOCK_32X32,
+                    r,
+                    sbo.block_offset(0, 0),
+                    &[Some(pmv), pmv_w, pmv_n],
+                    i
+                  )
+                });
+                s.spawn(|_| {
+                  pmvs2 = estimate_motion_ss2(
+                    fi,
+                    fs,
+                    BlockSize::BLOCK_32X32,
+                    r,
+                    sbo.block_offset(8, 0),
+                    &[Some(pmv), pmv_e, pmv_n],
+                    i
+                  )
+                });
+                s.spawn(|_| {
+                  pmvs3 = estimate_motion_ss2(
+                    fi,
+                    fs,
+                    BlockSize::BLOCK_32X32,
+                    r,
+                    sbo.block_offset(0, 8),
+                    &[Some(pmv), pmv_w, pmv_s],
+                    i
+                  )
+                });
+                s.spawn(|_| {
+                  pmvs4 = estimate_motion_ss2(
+                    fi,
+                    fs,
+                    BlockSize::BLOCK_32X32,
+                    r,
+                    sbo.block_offset(8, 8),
+                    &[Some(pmv), pmv_e, pmv_s],
+                    i
+                  )
+                });
               });
-              s.spawn(|_| {
-                pmvs2 = estimate_motion_ss2(
-                  fi,
-                  fs,
-                  BlockSize::BLOCK_32X32,
-                  r,
-                  sbo.block_offset(8, 0),
-                  &[Some(pmv), pmv_e, pmv_n],
-                  i
-                )
-              });
-              s.spawn(|_| {
-                pmvs3 = estimate_motion_ss2(
-                  fi,
-                  fs,
-                  BlockSize::BLOCK_32X32,
-                  r,
-                  sbo.block_offset(0, 8),
-                  &[Some(pmv), pmv_w, pmv_s],
-                  i
-                )
-              });
-              s.spawn(|_| {
-                pmvs4 = estimate_motion_ss2(
-                  fi,
-                  fs,
-                  BlockSize::BLOCK_32X32,
-                  r,
-                  sbo.block_offset(8, 8),
-                  &[Some(pmv), pmv_e, pmv_s],
-                  i
-                )
-              });
-            });
+            } else {
+              pmvs1 = Some(Default::default());
+              pmvs2 = Some(Default::default());
+              pmvs3 = Some(Default::default());
+              pmvs4 = Some(Default::default());
+            }
 
             pmvs[1][r] = pmvs1;
             pmvs[2][r] = pmvs2;
