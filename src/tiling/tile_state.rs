@@ -21,6 +21,7 @@ use crate::util::*;
 
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
+use std::sync::Mutex;
 use std::slice;
 
 #[derive(Debug, Clone)]
@@ -34,6 +35,14 @@ pub struct TileRestorationPlane<'a> {
 impl<'a> TileRestorationPlane<'a> {
   pub fn new(sbo: SuperBlockOffset, rp: &'a RestorationPlane) -> Self {
     Self { sbo, rp, wiener_ref: [WIENER_TAPS_MID; 2], sgrproj_ref: SGRPROJ_XQD_MID }
+  }
+
+  pub fn restoration_unit(&self, tile_sbo: SuperBlockOffset) -> &Mutex<RestorationUnit> {
+    let frame_sbo = SuperBlockOffset {
+      x: self.sbo.x + tile_sbo.x,
+      y: self.sbo.y + tile_sbo.y,
+    };
+    self.rp.restoration_unit(frame_sbo)
   }
 }
 
