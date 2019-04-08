@@ -2027,7 +2027,7 @@ use rayon::prelude::*;
 
 
 #[inline(always)]
-fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, fs: &FrameState<T>) -> Vec<[Option<MotionVector>; REF_FRAMES]> {
+fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>) -> Vec<[Option<MotionVector>; REF_FRAMES]> {
   assert!(!fi.sequence.use_128x128_superblock);
   if fi.w_in_b >= 16 && fi.h_in_b >= 16 {
     let sby_range = 0..fi.sb_height;
@@ -2043,7 +2043,7 @@ fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, fs: &FrameState<T>) -> V
         for i in 0..INTER_REFS_PER_FRAME {
           let r = fi.ref_frames[i] as usize;
           if pmvs[r].is_none() {
-            pmvs[r] = estimate_motion_ss4(fi, fs, BlockSize::BLOCK_64X64, r, bo);
+            pmvs[r] = estimate_motion_ss4(fi, ts, BlockSize::BLOCK_64X64, r, bo);
           }
         }
         pmvs
@@ -2129,7 +2129,7 @@ fn encode_tile<T: Pixel>(
   // For now, restoration unit size is locked to superblock size.
   let mut cw = ContextWriter::new(fc, bc);
 
-  let frame_pmvs = build_coarse_pmvs(fi, fs);
+  let frame_pmvs = build_coarse_pmvs(fi, &fs.as_tile_state_mut());
   // main loop
   for sby in 0..fi.sb_height {
     cw.bc.reset_left_contexts();
@@ -2176,11 +2176,12 @@ fn encode_tile<T: Pixel>(
               let mut pmvs2 = None;
               let mut pmvs3 = None;
               let mut pmvs4 = None;
+              let ts = fs.as_tile_state_mut();
               rayon::scope(|s| {
                 s.spawn(|_| {
                   pmvs1 = estimate_motion_ss2(
                     fi,
-                    fs,
+                    &ts,
                     BlockSize::BLOCK_32X32,
                     r,
                     sbo.block_offset(0, 0),
@@ -2191,7 +2192,7 @@ fn encode_tile<T: Pixel>(
                 s.spawn(|_| {
                   pmvs2 = estimate_motion_ss2(
                     fi,
-                    fs,
+                    &ts,
                     BlockSize::BLOCK_32X32,
                     r,
                     sbo.block_offset(8, 0),
@@ -2202,7 +2203,7 @@ fn encode_tile<T: Pixel>(
                 s.spawn(|_| {
                   pmvs3 = estimate_motion_ss2(
                     fi,
-                    fs,
+                    &ts,
                     BlockSize::BLOCK_32X32,
                     r,
                     sbo.block_offset(0, 8),
@@ -2213,7 +2214,7 @@ fn encode_tile<T: Pixel>(
                 s.spawn(|_| {
                   pmvs4 = estimate_motion_ss2(
                     fi,
-                    fs,
+                    &ts,
                     BlockSize::BLOCK_32X32,
                     r,
                     sbo.block_offset(8, 8),
