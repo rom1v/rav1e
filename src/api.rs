@@ -447,7 +447,7 @@ pub struct Config {
   pub threads: usize
 }
 
-const MAX_USABLE_THREADS: usize = 4;
+const MAX_USABLE_THREADS: usize = 8;
 
 impl Config {
   pub fn new_context<T: Pixel>(&self) -> Context<T> {
