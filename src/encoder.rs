@@ -417,6 +417,7 @@ pub struct FrameState<T: Pixel> {
   pub rec: Frame<T>,
   pub cdfs: CDFContext,
   pub context_update_tile_id: usize, // tile id used for the CDFontext
+  pub max_tile_size_bytes: u32,
   pub deblock: DeblockState,
   pub segmentation: SegmentationState,
   pub restoration: RestorationState,
@@ -446,6 +447,7 @@ impl<T: Pixel> FrameState<T> {
       rec: Frame::new(luma_width, luma_height, fi.sequence.chroma_sampling),
       cdfs: CDFContext::new(0),
       context_update_tile_id: 0,
+      max_tile_size_bytes: 0,
       deblock: Default::default(),
       segmentation: Default::default(),
       restoration: rs,
@@ -2148,7 +2150,7 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
     fs.t.print_code();
   }
 
-  let (idx_max, _max_len) = raw_tiles
+  let (idx_max, max_len) = raw_tiles
     .iter()
     .map(|raw| raw.len())
     .enumerate()
@@ -2160,10 +2162,14 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
   fs.cdfs = cdfs[idx_max];
   fs.cdfs.reset_counts();
 
-  build_raw_tile_group(ti, &raw_tiles)
+  let max_tile_size_bytes = ((max_len as u32).ilog() + 7) / 8;
+  debug_assert!(max_tile_size_bytes > 0 && max_tile_size_bytes <= 4);
+  fs.max_tile_size_bytes = max_tile_size_bytes;
+
+  build_raw_tile_group(ti, &raw_tiles, max_tile_size_bytes)
 }
 
-fn build_raw_tile_group(ti: &TilingInfo, raw_tiles: &[Vec<u8>]) -> Vec<u8> {
+fn build_raw_tile_group(ti: &TilingInfo, raw_tiles: &[Vec<u8>], max_tile_size_bytes: u32) -> Vec<u8> {
   // <https://aomediacodec.github.io/av1-spec/#general-tile-group-obu-syntax>
   let mut raw = Vec::new();
   let mut bw = BitWriter::endian(&mut raw, BigEndian);
@@ -2176,7 +2182,7 @@ fn build_raw_tile_group(ti: &TilingInfo, raw_tiles: &[Vec<u8>]) -> Vec<u8> {
     let last = raw_tiles.len() - 1;
     if i != last {
       let tile_size_minus_1 = raw_tile.len() - 1;
-      bw.write_le(4, tile_size_minus_1 as u64).unwrap();
+      bw.write_le(max_tile_size_bytes, tile_size_minus_1 as u64).unwrap();
     }
     bw.write_bytes(&raw_tile).unwrap();
   }
