@@ -37,6 +37,12 @@ use crate::util::*;
 ///
 /// Some others (like "rec") are written tile-wise, but must be accessible
 /// frame-wise once the tile views vanish (e.g. for deblocking).
+///
+/// The "restoration" field is more complicated: some of its data
+/// (restoration units) are written tile-wise, but shared between several
+/// tiles. Therefore, they are stored in FrameState with interior mutability
+/// (protected by a mutex), and referenced from TileState.
+/// See <https://github.com/xiph/rav1e/issues/631#issuecomment-454419152>.
 #[derive(Debug)]
 pub struct TileStateMut<'a, T: Pixel> {
   pub sbo: SuperBlockOffset,
@@ -55,6 +61,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub rec: TileMut<'a, T>,
   pub qc: QuantizationContext,
   pub segmentation: &'a SegmentationState,
+  pub restoration: TileRestorationState<'a>,
   pub rdo: RDOTracker,
 }
 
@@ -91,6 +98,7 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       rec: TileMut::new(&mut fs.rec, luma_rect),
       qc: Default::default(),
       segmentation: &fs.segmentation,
+      restoration: TileRestorationState::new(sbo, &fs.restoration),
       rdo: RDOTracker::new(),
     }
   }
