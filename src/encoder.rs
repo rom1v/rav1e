@@ -2099,12 +2099,15 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
   let initial_cdf = get_initial_cdfcontext(fi);
   let mut cdfs = vec![initial_cdf; ti.tile_count()];
 
-  let raw_tiles = ti
+  let tile_results = ti
     .tile_iter_mut(fs, &mut blocks)
     .zip(cdfs.iter_mut())
     .collect::<Vec<_>>()
     .par_iter_mut()
-    .map(|(ref mut ctx, cdf)| encode_tile(fi, &mut ctx.ts, cdf, &mut ctx.tb))
+    .map(|(ref mut ctx, cdf)| {
+      let raw = encode_tile(fi, &mut ctx.ts, cdf, &mut ctx.tb);
+      (raw, ctx.ts.rdo.clone())
+    })
     .collect::<Vec<_>>();
 
   /* TODO: Don't apply if lossless */
@@ -2128,6 +2131,7 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
 
   if fi.config.train_rdo {
     eprintln!("train rdo");
+    tile_results.iter().map(|(_, rdo)| rdo).for_each(|rdo| fs.t.merge_in(rdo));
     if let Ok(mut file) = File::open("rdo.dat") {
       let mut data = vec![];
       file.read_to_end(&mut data).unwrap();
@@ -2142,6 +2146,7 @@ fn encode_tile_group<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) 
   fs.cdfs = cdfs[0];
   fs.cdfs.reset_counts();
 
+  let raw_tiles = tile_results.into_iter().map(|(raw, _)| raw).collect::<Vec<_>>();
   build_raw_tile_group(ti, &raw_tiles)
 }
 
