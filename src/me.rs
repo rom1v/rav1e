@@ -459,7 +459,7 @@ pub trait MotionEstimation {
     if let Some(ref rec) = fi.rec_buffer.frames[ref_idx] {
       let blk_w = bsize.width();
       let blk_h = bsize.height();
-      let bo_adj = adjust_bo(bo, fi, blk_w, blk_h);
+      let bo_adj = adjust_bo(bo, fi.w_in_b, fi.h_in_b, blk_w, blk_h);
       let (mvx_min, mvx_max, mvy_min, mvy_max) = get_mv_range(fi.w_in_b, fi.h_in_b, bo_adj, blk_w, blk_h);
 
       let global_mv = [MotionVector{row: 0, col: 0}; 2];
@@ -980,10 +980,10 @@ fn full_search<T: Pixel>(
 }
 
 // Adjust block offset such that entire block lies within frame boundaries
-fn adjust_bo<T: Pixel>(bo: BlockOffset, fi: &FrameInvariants<T>, blk_w: usize, blk_h: usize) -> BlockOffset {
+fn adjust_bo(bo: BlockOffset, w_in_b: usize, h_in_b: usize, blk_w: usize, blk_h: usize) -> BlockOffset {
   BlockOffset {
-    x: (bo.x as isize).min(fi.w_in_b as isize - blk_w as isize / 4).max(0) as usize,
-    y: (bo.y as isize).min(fi.h_in_b as isize - blk_h as isize / 4).max(0) as usize
+    x: (bo.x as isize).min(w_in_b as isize - blk_w as isize / 4).max(0) as usize,
+    y: (bo.y as isize).min(h_in_b as isize - blk_h as isize / 4).max(0) as usize
   }
 }
 
@@ -1009,7 +1009,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
   if let Some(ref rec) = fi.rec_buffer.frames[ref_idx] {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
-    let bo_adj = adjust_bo(bo, fi, blk_w, blk_h);
+    let bo_adj = adjust_bo(bo, fi.w_in_b, fi.h_in_b, blk_w, blk_h);
     let po = PlaneOffset {
       x: (bo_adj.x as isize) << BLOCK_TO_PLANE_SHIFT >> 2,
       y: (bo_adj.y as isize) << BLOCK_TO_PLANE_SHIFT >> 2
