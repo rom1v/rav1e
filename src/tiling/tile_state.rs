@@ -62,6 +62,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub qc: QuantizationContext,
   pub segmentation: &'a SegmentationState,
   pub restoration: TileRestorationState<'a>,
+  pub mvs: Vec<TileMotionVectorsMut<'a>>,
   pub rdo: RDOTracker,
 }
 
@@ -73,6 +74,8 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
     width: usize,
     height: usize,
   ) -> Self {
+    debug_assert!(width % MI_SIZE == 0, "Tile width must be a multiple of MI_SIZE");
+    debug_assert!(height % MI_SIZE == 0, "Tile width must be a multiple of MI_SIZE");
     let luma_rect = TileRect {
       x: sbo.x << sb_size_log2,
       y: sbo.y << sb_size_log2,
@@ -99,6 +102,15 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       qc: Default::default(),
       segmentation: &fs.segmentation,
       restoration: TileRestorationState::new(sbo, &fs.restoration),
+      mvs: fs.frame_mvs.iter_mut().map(|fmvs| {
+        TileMotionVectorsMut::new(
+          fmvs,
+          sbo.x << (sb_size_log2 - MI_SIZE_LOG2),
+          sbo.y << (sb_size_log2 - MI_SIZE_LOG2),
+          width >> MI_SIZE_LOG2,
+          height >> MI_SIZE_LOG2,
+        )
+      }).collect(),
       rdo: RDOTracker::new(),
     }
   }
