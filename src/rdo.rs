@@ -1063,10 +1063,11 @@ pub fn get_sub_partitions(four_partitions: &[BlockOffset; 4],
   partitions
 }
 
-pub fn get_sub_partitions_with_border_check<T: Pixel>(
+pub fn get_sub_partitions_with_border_check(
   four_partitions: &[BlockOffset; 4],
   partition: PartitionType,
-  fi: &FrameInvariants<T>,
+  w_in_b: usize,
+  h_in_b: usize,
   subsize: BlockSize
 ) -> Vec<BlockOffset> {
   let mut partitions = vec![ four_partitions[0] ];
@@ -1078,18 +1079,18 @@ pub fn get_sub_partitions_with_border_check<T: Pixel>(
   let hbsh = subsize.height_mi(); // Half the block size height in blocks
 
   if partition == PARTITION_VERT || partition == PARTITION_SPLIT {
-    if four_partitions[1].x + hbsw as usize <= fi.w_in_b &&
-      four_partitions[1].y + hbsh as usize <= fi.h_in_b {
+    if four_partitions[1].x + hbsw as usize <= w_in_b &&
+      four_partitions[1].y + hbsh as usize <= h_in_b {
         partitions.push(four_partitions[1]); }
   };
   if partition == PARTITION_HORZ || partition == PARTITION_SPLIT {
-    if four_partitions[2].x + hbsw as usize <= fi.w_in_b &&
-      four_partitions[2].y + hbsh as usize <= fi.h_in_b {
+    if four_partitions[2].x + hbsw as usize <= w_in_b &&
+      four_partitions[2].y + hbsh as usize <= h_in_b {
         partitions.push(four_partitions[2]); }
   };
   if partition == PARTITION_SPLIT {
-    if four_partitions[3].x + hbsw as usize <= fi.w_in_b &&
-      four_partitions[3].y + hbsh as usize <= fi.h_in_b {
+    if four_partitions[3].x + hbsw as usize <= w_in_b &&
+      four_partitions[3].y + hbsh as usize <= h_in_b {
         partitions.push(four_partitions[3]); }
   };
 
@@ -1159,7 +1160,7 @@ pub fn rdo_partition_decision<T: Pixel>(
           BlockOffset{ x: bo.x, y: bo.y + hbsh as usize },
           BlockOffset{ x: bo.x + hbsw as usize, y: bo.y + hbsh as usize }
         ];
-        let partitions = get_sub_partitions_with_border_check(&four_partitions, partition, fi, subsize);
+        let partitions = get_sub_partitions_with_border_check(&four_partitions, partition, fi.w_in_b, fi.h_in_b, subsize);
 
         let pmv_idxs = partitions.iter().map(|&offset| {
           if subsize.greater_than(BlockSize::BLOCK_32X32) {
