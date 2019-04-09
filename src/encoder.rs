@@ -2064,9 +2064,9 @@ use rayon::prelude::*;
 #[inline(always)]
 fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>) -> Vec<[Option<MotionVector>; REF_FRAMES]> {
   assert!(!fi.sequence.use_128x128_superblock);
-  if fi.w_in_b >= 16 && fi.h_in_b >= 16 {
-    let sby_range = 0..fi.sb_height;
-    let sbx_range = 0..fi.sb_width;
+  if ts.w_in_b >= 16 && ts.h_in_b >= 16 {
+    let sby_range = 0..ts.sb_height;
+    let sbx_range = 0..ts.sb_width;
 
     let sbos = (sby_range).flat_map(|y| {
         sbx_range.clone().map(move |x| SuperBlockOffset { x, y })
