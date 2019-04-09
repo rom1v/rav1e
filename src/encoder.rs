@@ -2059,9 +2059,12 @@ use rayon::prelude::*;
 #[inline(always)]
 fn build_coarse_pmvs<T: Pixel>(fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>) -> Vec<[Option<MotionVector>; REF_FRAMES]> {
   assert!(!fi.sequence.use_128x128_superblock);
-  if fi.w_in_b >= 16 && fi.h_in_b >= 16 {
-    let sby_range = 0..fi.sb_height;
-    let sbx_range = 0..fi.sb_width;
+  if ts.w_in_b >= 16 && ts.h_in_b >= 16 {
+    let sb_shift = fi.sb_size_log2();
+    let tile_sb_width = ts.width.align_power_of_two_and_shift(sb_shift);
+    let tile_sb_height = ts.height.align_power_of_two_and_shift(sb_shift);
+    let sby_range = 0..tile_sb_width;
+    let sbx_range = 0..tile_sb_height;
 
     let sbos = (sby_range).flat_map(|y| {
         sbx_range.clone().map(move |x| SuperBlockOffset { x, y })
@@ -2226,7 +2229,7 @@ fn encode_tile<'a, T: Pixel>(
 
       // Do subsampled ME
       let mut pmvs: [[Option<MotionVector>; REF_FRAMES]; 5] = [[None; REF_FRAMES]; 5];
-      if fi.w_in_b >= 8 && fi.h_in_b >= 8 {
+      if ts.w_in_b >= 8 && ts.h_in_b >= 8 {
         for i in 0..INTER_REFS_PER_FRAME {
           let r = fi.ref_frames[i] as usize;
           if pmvs[0][r].is_none() {
@@ -2247,7 +2250,7 @@ fn encode_tile<'a, T: Pixel>(
               } else {
                 None
               };
-              let pmv_s = if sby < fi.sb_height - 1 {
+              let pmv_s = if sby < tile_sb_height - 1 {
                 tile_pmvs[sby * tile_sb_width + sbx + tile_sb_width][r]
               } else {
                 None
