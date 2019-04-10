@@ -2213,15 +2213,11 @@ fn encode_tile<'a, T: Pixel>(
 
   let tile_pmvs = build_coarse_pmvs(fi, ts);
 
-  let sb_shift = fi.sb_size_log2();
-  let tile_sb_width = ts.width.align_power_of_two_and_shift(sb_shift);
-  let tile_sb_height = ts.height.align_power_of_two_and_shift(sb_shift);
-
   // main loop
-  for sby in 0..tile_sb_height {
+  for sby in 0..ts.sb_height {
     cw.bc.reset_left_contexts();
 
-    for sbx in 0..tile_sb_width {
+    for sbx in 0..ts.sb_width {
       let mut w_pre_cdef = WriterRecorder::new();
       let mut w_post_cdef = WriterRecorder::new();
       let sbo = SuperBlockOffset { x: sbx, y: sby };
@@ -2235,25 +2231,25 @@ fn encode_tile<'a, T: Pixel>(
         for i in 0..INTER_REFS_PER_FRAME {
           let r = fi.ref_frames[i] as usize;
           if pmvs[0][r].is_none() {
-            pmvs[0][r] = tile_pmvs[sby * tile_sb_width + sbx][r];
+            pmvs[0][r] = tile_pmvs[sby * ts.sb_width + sbx][r];
             if let Some(pmv) = pmvs[0][r] {
               let pmv_w = if sbx > 0 {
-                tile_pmvs[sby * tile_sb_width + sbx - 1][r]
+                tile_pmvs[sby * ts.sb_width + sbx - 1][r]
               } else {
                 None
               };
-              let pmv_e = if sbx < tile_sb_width - 1 {
-                tile_pmvs[sby * tile_sb_width + sbx + 1][r]
+              let pmv_e = if sbx < ts.sb_width - 1 {
+                tile_pmvs[sby * ts.sb_width + sbx + 1][r]
               } else {
                 None
               };
               let pmv_n = if sby > 0 {
-                tile_pmvs[sby * tile_sb_width + sbx - tile_sb_width][r]
+                tile_pmvs[sby * ts.sb_width + sbx - ts.sb_width][r]
               } else {
                 None
               };
-              let pmv_s = if sby < tile_sb_height - 1 {
-                tile_pmvs[sby * tile_sb_width + sbx + tile_sb_width][r]
+              let pmv_s = if sby < ts.sb_height - 1 {
+                tile_pmvs[sby * ts.sb_width + sbx + ts.sb_width][r]
               } else {
                 None
               };
