@@ -126,6 +126,8 @@ macro_rules! plane_region_common {
 
       #[inline(always)]
       pub fn new(plane: $plane_ref_type, rect: Rect) -> Self {
+        assert!(rect.x >= -(plane.cfg.xorigin as isize));
+        assert!(rect.y >= -(plane.cfg.yorigin as isize));
         assert!(plane.cfg.xorigin as isize + rect.x + rect.width as isize <= plane.cfg.stride as isize);
         assert!(plane.cfg.yorigin as isize + rect.y + rect.height as isize <= plane.cfg.alloc_height as isize);
         let origin = (plane.cfg.yorigin as isize + rect.y) * plane.cfg.stride as isize
