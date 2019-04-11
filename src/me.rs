@@ -950,7 +950,7 @@ fn telescopic_subpel_search<T: Pixel>(
           );
         }
 
-        let plane_org = ts.input_tile.planes[0].subregion(Area::StartingAt { x: po.x, y: po.y });
+        let plane_org = ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
         let plane_ref = tmp_plane.as_region();
 
         let sad = get_sad(&plane_org, &plane_ref, blk_h, blk_w, fi.sequence.bit_depth);
