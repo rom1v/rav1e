@@ -1848,7 +1848,9 @@ fn encode_partition_topdown<T: Pixel>(
     PartitionType::PARTITION_NONE => {
       let part_decision = if !rdo_output.part_modes.is_empty() {
         // The optimal prediction mode is known from a previous iteration
-        rdo_output.part_modes[0].clone()
+        let mut part_decision = rdo_output.part_modes[0].clone();
+        part_decision.mvs = [MotionVector { col: 8, row: 8 }, Default::default()];
+        part_decision
       } else {
         let pmv_idx = if bsize.greater_than(BlockSize::BLOCK_32X32) {
           0
