@@ -77,6 +77,11 @@ impl TileRect {
       y: sby + tile_sbo.y,
     }
   }
+
+  pub fn contains(&self, po: PlaneOffset) -> bool {
+    po.x >= self.x as isize && po.x < (self.x + self.width) as isize &&
+    po.y >= self.y as isize && po.y < (self.y + self.height) as isize
+  }
 }
 
 impl From<TileRect> for Rect {
