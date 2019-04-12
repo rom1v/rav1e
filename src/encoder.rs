@@ -1919,7 +1919,16 @@ fn encode_partition_topdown<T: Pixel>(
     PartitionType::PARTITION_NONE => {
       let part_decision = if !rdo_output.part_modes.is_empty() {
         // The optimal prediction mode is known from a previous iteration
-        rdo_output.part_modes[0].clone()
+        let mut part_decision = rdo_output.part_modes[0].clone();
+        let mv = part_decision.mvs[0];
+        let tr = ts.tile_rect();
+        let target_x = tr.x as isize + (bo.x << 2) as isize + (mv.col >> 3) as isize;
+        let target_y = tr.y as isize + (bo.y << 2) as isize + (mv.col >> 3) as isize;
+        if target_x < tr.x as isize || target_x >= tr.x as isize + tr.width as isize  ||
+           target_y < tr.y as isize || target_y >= tr.y as isize + tr.height as isize {
+          part_decision.mvs = Default::default();
+        }
+        part_decision
       } else {
         let pmv_idx = if bsize.greater_than(BlockSize::BLOCK_32X32) {
           0
