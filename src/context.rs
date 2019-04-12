@@ -2283,6 +2283,9 @@ impl<'a> ContextWriter<'a> {
                    mv_stack: &mut Vec<CandidateMV>, newmv_count: &mut usize, bsize: BlockSize,
                    is_compound: bool) -> bool {
     let bc = &self.bc;
+    if bo.x >= bc.blocks.cols() || bo.y >= bc.blocks.rows() {
+      return false;
+    }
     let target_n4_w = bsize.width_mi();
 
     let end_mi = cmp::min(cmp::min(target_n4_w, bc.blocks.cols() - bo.x),
@@ -2337,6 +2340,9 @@ impl<'a> ContextWriter<'a> {
                    mv_stack: &mut Vec<CandidateMV>, newmv_count: &mut usize, bsize: BlockSize,
                    is_compound: bool) -> bool {
     let bc = &self.bc;
+    if bo.x >= bc.blocks.cols() || bo.y >= bc.blocks.rows() {
+      return false;
+    }
 
     let target_n4_h = bsize.height_mi();
 
