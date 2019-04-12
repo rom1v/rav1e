@@ -1295,16 +1295,33 @@ pub fn has_tr(bo: BlockOffset, bsize: BlockSize) -> bool {
     bs <<= 1;
   }
 
+  let mut is_sec_rect = false;
+  if target_n4_w < target_n4_h {
+    if (bo.x + target_n4_w) & (target_n4_h - 1) == 0 {
+      is_sec_rect = true;
+    }
+  }
+
+  if target_n4_w > target_n4_h {
+    if bo.y & (target_n4_w - 1) != 0 {
+      is_sec_rect = true;
+    }
+  }
+
   /* The left hand of two vertical rectangles always has a top right (as the
     * block above will have been decoded) */
-  if (target_n4_w < target_n4_h) && (bo.x & target_n4_w) == 0 {
-    has_tr = true;
+  if target_n4_w < target_n4_h {
+    if !is_sec_rect {
+      has_tr = true;
+    }
   }
 
   /* The bottom of two horizontal rectangles never has a top right (as the block
     * to the right won't have been decoded) */
-  if (target_n4_w > target_n4_h) && (bo.y & target_n4_h) != 0 {
-    has_tr = false;
+  if target_n4_w > target_n4_h {
+    if is_sec_rect {
+      has_tr = false;
+    }
   }
 
   /* The bottom left square of a Vertical A (in the old format) does
