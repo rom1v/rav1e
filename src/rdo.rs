@@ -703,8 +703,12 @@ pub fn rdo_mode_decision<T: Pixel>(
     };
     let mode_set_chroma = vec![luma_mode];
 
-    luma_chroma_mode_rdo(luma_mode, ts, cw, &mut best, mvs, ref_frames_set[i], &mode_set_chroma, false,
-             mode_contexts[i], &mv_stacks[i]);
+    let tr = ts.tile_rect();
+    let po = mvs[0].target(tr, bo);
+    if tr.contains(po) {
+      luma_chroma_mode_rdo(luma_mode, ts, cw, &mut best, mvs, ref_frames_set[i], &mode_set_chroma, false,
+               mode_contexts[i], &mv_stacks[i]);
+    }
   });
 
   if !best.skip {
