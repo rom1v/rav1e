@@ -769,6 +769,15 @@ pub struct MotionVector {
   pub col: i16
 }
 
+impl MotionVector {
+  pub fn target(&self, frame_bo: BlockOffset) -> PlaneOffset {
+    PlaneOffset {
+      x: (frame_bo.x << MI_SIZE_LOG2) as isize + (self.col >> 3) as isize,
+      y: (frame_bo.y << MI_SIZE_LOG2) as isize + (self.row >> 3) as isize,
+    }
+  }
+}
+
 impl ops::Add<MotionVector> for MotionVector {
     type Output = MotionVector;
 
