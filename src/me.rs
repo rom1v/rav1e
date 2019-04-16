@@ -452,7 +452,16 @@ pub trait MotionEstimation {
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
                            &mut best_mv, &mut lowest_cost, ref_frame);
 
-        best_mv
+        let target_x = (tile_bo.x << 5) as isize + best_mv.col as isize;
+        let target_y = (tile_bo.y << 5) as isize + best_mv.row as isize;
+        let is_inside_tile =
+          target_x >= 0 && target_x < (ts.tile_rect().width << 3) as isize &&
+          target_y >= 0 && target_y < (ts.tile_rect().height << 3) as isize;
+        if is_inside_tile {
+          best_mv
+        } else {
+          MotionVector::default()
+        }
       }
 
       None => MotionVector::default()
