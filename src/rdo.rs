@@ -703,15 +703,8 @@ pub fn rdo_mode_decision<T: Pixel>(
     };
     let mode_set_chroma = vec![luma_mode];
 
-    let target_x = (bo.x << 5) as isize + mvs[0].col as isize;
-    let target_y = (bo.y << 5) as isize + mvs[0].row as isize;
-    let is_inside_tile =
-      target_x >= 0 && target_x < (ts.tile_rect().width << 3) as isize &&
-      target_y >= 0 && target_y < (ts.tile_rect().height << 3) as isize;
-    if is_inside_tile {
-      luma_chroma_mode_rdo(luma_mode, ts, cw, &mut best, mvs, ref_frames_set[i], &mode_set_chroma, false,
-               mode_contexts[i], &mv_stacks[i]);
-    }
+    luma_chroma_mode_rdo(luma_mode, ts, cw, &mut best, mvs, ref_frames_set[i], &mode_set_chroma, false,
+             mode_contexts[i], &mv_stacks[i]);
   });
 
   if !best.skip {
