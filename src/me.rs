@@ -467,7 +467,8 @@ pub trait MotionEstimation {
       let blk_w = bsize.width();
       let blk_h = bsize.height();
       let tile_bo_adj = adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
-      let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
+      let frame_bo = ts.to_frame_block_offset(tile_bo);
+      let frame_bo_adj = adjust_bo(frame_bo, fi.w_in_b, fi.h_in_b, blk_w, blk_h);
       let (mvx_min, mvx_max, mvy_min, mvy_max) = get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo_adj, blk_w, blk_h);
 
       let global_mv = [MotionVector{row: 0, col: 0}; 2];
@@ -1031,8 +1032,8 @@ pub fn estimate_motion_ss4<T: Pixel>(
   if let Some(ref rec) = fi.rec_buffer.frames[ref_idx] {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
-    let tile_bo_adj = adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
-    let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
+    let frame_bo = ts.to_frame_block_offset(tile_bo);
+    let frame_bo_adj = adjust_bo(frame_bo, fi.w_in_b, fi.h_in_b, blk_w, blk_h);
     let po = PlaneOffset {
       x: (frame_bo_adj.x as isize) << BLOCK_TO_PLANE_SHIFT >> 2,
       y: (frame_bo_adj.y as isize) << BLOCK_TO_PLANE_SHIFT >> 2
